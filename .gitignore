@@ -1,0 +1,13 @@
+/build/
+/build-*/
+/release/
+__pycache__/
+*.pyc
+*.log
+*.events.csv
+*.zip
+*.dll
+*.exe
+*.obj
+*.pdb
+.vs/

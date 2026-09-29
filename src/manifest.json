@@ -1,0 +1,6 @@
+{
+  "api_version": "1",
+  "name": "TF2HighFPSFix",
+  "version": "0.1.0",
+  "description": "Build-validated Ion high-FPS timing transplant for Vanilla clients."
+}

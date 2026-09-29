@@ -1,0 +1,146 @@
+[
+  {
+    "name": "engine.dll",
+    "sha256": "58eb1a1b44b30275bdd21368de264d856bc310d37d93a0f76f111f0026913487",
+    "timestamp": 1512510000,
+    "image_size": 349908992,
+    "symbols": [
+      {
+        "name": "CLMove",
+        "rva": 472256,
+        "signature": "48895c2418574881ece0000000440f296424700fb6fa440f",
+        "first_instruction": "mov qword ptr [rsp + 0x18], rbx"
+      },
+      {
+        "name": "GetClient",
+        "rva": 492032,
+        "signature": "488d05b9e27200c3cccccccccccccccc4883ec2883f9ff75",
+        "first_instruction": "lea rax, [rip + 0x72e2b9]"
+      },
+      {
+        "name": "HostShouldRun",
+        "rva": 1407808,
+        "signature": "4883ec28488b059d19001383785c007507b0014883c428c3",
+        "first_instruction": "sub rsp, 0x28"
+      },
+      {
+        "name": "IsPaused",
+        "rva": 587040,
+        "signature": "4883ec2880b960010000007534803d66940c1300742b488b",
+        "first_instruction": "sub rsp, 0x28"
+      },
+      {
+        "name": "GetFrameTime",
+        "rva": 582656,
+        "signature": "40534883ec20488bd9e8a215090084c07529388350010100",
+        "first_instruction": "push rbx"
+      },
+      {
+        "name": "SendMove",
+        "rva": 478992,
+        "signature": "48895c240848896c2410488974241848897c24204156b860",
+        "first_instruction": "mov qword ptr [rsp + 8], rbx"
+      },
+      {
+        "name": "CanPacket",
+        "rva": 2160160,
+        "signature": "40534883ec20488b05eb04d913488bd983785c0075184881",
+        "first_instruction": "push rbx"
+      },
+      {
+        "name": "SendNetMsg",
+        "rva": 2175600,
+        "signature": "48896c241857415641574883ec20488bf94881c18c360000",
+        "first_instruction": "mov qword ptr [rsp + 0x18], rbp"
+      },
+      {
+        "name": "SendDatagram",
+        "rva": 2174160,
+        "signature": "48897424185741544155415641574883ec704532e44532ff",
+        "first_instruction": "mov qword ptr [rsp + 0x18], rsi"
+      },
+      {
+        "name": "SetChoked",
+        "rva": 2176864,
+        "signature": "ff4104ff4110c3cccccccccccccccccc889164010000c3cc",
+        "first_instruction": "inc dword ptr [rcx + 4]"
+      },
+      {
+        "name": "SetClientTime",
+        "rva": 596688,
+        "signature": "f30f1189b0000000c3cccccccccccccc48895108c3cccccc",
+        "first_instruction": "movss dword ptr [rcx + 0xb0], xmm1"
+      }
+    ]
+  },
+  {
+    "name": "client.dll",
+    "sha256": "002b36487fec7c98882929fbccdb506d0146bbf3270cbb964a4d21c5edf7eebc",
+    "timestamp": 1512510036,
+    "image_size": 64274432,
+    "symbols": [
+      {
+        "name": "ExtraSample",
+        "rva": 2446528,
+        "signature": "48895c24084889742410574883ec40488bf983ceff0f2974",
+        "first_instruction": "mov qword ptr [rsp + 8], rbx"
+      },
+      {
+        "name": "GetButtonBits",
+        "rva": 2430496,
+        "signature": "40554155488bec4883ec38f605f6caf6000348895c245048",
+        "first_instruction": "push rbp"
+      },
+      {
+        "name": "ApplyMouse",
+        "rva": 2451376,
+        "signature": "48895c24084889742410574883ec40f20f1015d9197b00f3",
+        "first_instruction": "mov qword ptr [rsp + 8], rbx"
+      },
+      {
+        "name": "InputCreateMove",
+        "rva": 2444560,
+        "signature": "48895c241855565741544155415641574881ec800000004c",
+        "first_instruction": "mov qword ptr [rsp + 0x18], rbx"
+      },
+      {
+        "name": "PlayerCreateMove",
+        "rva": 1353856,
+        "signature": "488bc45553574156488da8e8feffff4881ecf80100004889",
+        "first_instruction": "mov rax, rsp"
+      },
+      {
+        "name": "ActivateMouse",
+        "rva": 2451200,
+        "signature": "40534883ec2080790900488bd90f858e0000008079080048",
+        "first_instruction": "push rbx"
+      },
+      {
+        "name": "DeactivateMouse",
+        "rva": 2451776,
+        "signature": "40574883ec2080790900488bf9746480790800745ec64109",
+        "first_instruction": "push rdi"
+      },
+      {
+        "name": "ClearStates",
+        "rva": 2451696,
+        "signature": "40534883ec2080790900488bd9743a83caffe859b4ffff83",
+        "first_instruction": "push rbx"
+      }
+    ]
+  },
+  {
+    "name": "materialsystem_dx11.dll",
+    "sha256": "1afffb8dfe2a97a00ca3c5a68ca5277249176c2fd51ee7c5ad70f6eb699a6050",
+    "timestamp": 1512509975,
+    "image_size": 31567872,
+    "symbols": [
+      {
+        "name": "BeginFrame",
+        "rva": 369152,
+        "signature": "48895c24084889742410574883ec300f29742420488bf10f",
+        "first_instruction": "mov qword ptr [rsp + 8], rbx"
+      }
+    ]
+  }
+]

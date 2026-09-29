@@ -1,0 +1,1848 @@
+From 18114886fe7199e1e377dbcb23a10ec76794d583 Mon Sep 17 00:00:00 2001
+From: Will <39478251+VITALISED@users.noreply.github.com>
+Date: Sun, 13 Sep 2026 00:05:18 +1000
+Subject: [PATCH] sdk shit, accumulate input on cl_move
+
+---
+ include/cdll_int.h                      |   2 +-
+ include/client/baseanimating.h          |  59 +++++
+ include/client/baseanimatingoverlay.h   |   9 +
+ include/client/basecombatcharacter.h    |  43 ++++
+ include/client/baseentity.h             | 248 ++++++++++++++++++++
+ include/client/icliententity.h          |  18 ++
+ include/client/iclientmodelrenderable.h |   9 +
+ include/client/iclientnetworkable.h     |  47 ++++
+ include/client/iclientrenderable.h      |   2 +-
+ include/client/iclientthinkable.h       |  18 ++
+ include/client/iclientunknown.h         |  24 ++
+ include/client/player.h                 |  11 +
+ include/eiface.h                        |   8 +-
+ include/engine/client/clientstate.h     |   7 +-
+ include/engine/isplitscreen.h           |  25 ++
+ include/networkvar.h                    |  10 +
+ include/server/baseanimating.h          |  52 +++++
+ include/server/baseanimatingoverlay.h   |  12 +
+ include/server/basecombatcharacter.h    | 102 +++++++++
+ include/server/baseentity.h             | 292 +++++++++++++++++++++++-
+ include/server/datamap.h                |  56 +++++
+ include/server/player.h                 |  78 +++++++
+ include/server/variant_t.h              |  79 +++++++
+ src/CMakeLists.txt                      |   2 +
+ src/client/player.cpp                   |  15 ++
+ src/common/netmessages.cpp              |  49 ++++
+ src/common/netmessages.h                |  28 ++-
+ src/engine/cl_main.cpp                  |  69 ++----
+ src/engine/clientstate.cpp              |   8 +
+ src/engine/demo.h                       |  29 +++
+ 30 files changed, 1338 insertions(+), 73 deletions(-)
+ create mode 100644 include/client/baseanimating.h
+ create mode 100644 include/client/baseanimatingoverlay.h
+ create mode 100644 include/client/basecombatcharacter.h
+ create mode 100644 include/client/baseentity.h
+ create mode 100644 include/client/icliententity.h
+ create mode 100644 include/client/iclientmodelrenderable.h
+ create mode 100644 include/client/iclientnetworkable.h
+ create mode 100644 include/client/iclientthinkable.h
+ create mode 100644 include/client/iclientunknown.h
+ create mode 100644 include/client/player.h
+ create mode 100644 include/engine/isplitscreen.h
+ create mode 100644 include/networkvar.h
+ create mode 100644 include/server/datamap.h
+ create mode 100644 include/server/variant_t.h
+ create mode 100644 src/client/player.cpp
+ create mode 100644 src/common/netmessages.cpp
+
+diff --git a/include/cdll_int.h b/include/cdll_int.h
+index 4e7ebe11d..b8320e230 100644
+--- a/include/cdll_int.h
++++ b/include/cdll_int.h
+@@ -133,7 +133,7 @@ class IBaseClientDLL
+ 	virtual bool GetPlayerView(void* pPlayerView) = 0; // 80
+ 	virtual void SetupGameProperties(void* pContexts, void* pProperties) = 0; // 81
+ 	virtual std::uint32_t GetPresenceID(const char* pIdName) = 0; // 82
+-	virtual const char* GetPropertyIdString(std::uint32_t id) = 0; // 83
++	virtual void SetInputSampleTime(float frameTime) = 0; // 83
+ 	virtual void GetPropertyDisplayString(std::uint32_t id, std::uint32_t value,
+ 		char* pOutput, int outputSize) = 0; // 84
+ 	virtual void StartStatsReporting(void* pHandle, bool arbitrated) = 0; // 85
+diff --git a/include/client/baseanimating.h b/include/client/baseanimating.h
+new file mode 100644
+index 000000000..b939ef561
+--- /dev/null
++++ b/include/client/baseanimating.h
+@@ -0,0 +1,59 @@
++#pragma once
++
++#include "client/baseentity.h"
++
++class CStudioHdr;
++class IBoneSetup;
++class CBoneBitList;
++class C_BoneAccessor;
++class C_ClientRagdoll;
++struct BoneList;
++
++class C_BaseAnimating : public C_BaseEntity
++{
++public:
++	virtual unsigned int BuildTransformations(const CStudioHdr* hdr, Vector3* positions, Quaternion* rotations, Vector3* scales, const matrix3x4_t& cameraTransform, const BoneList* boneList, CBoneBitList& boneComputed) = 0; // 205
++	virtual void UpdateIKLocks(float currentTime) = 0; // 206
++	virtual void CalculateIKLocks(float currentTime) = 0; // 207
++private:
++	virtual void UnknownEntity208() = 0;
++public:
++	virtual const matrix3x4_t* GetHandIKOffset() const = 0; // 209
++	virtual void DoAnimationEventsHdr(const CStudioHdr* hdr) = 0; // 210
++	virtual void FireEvent(const Vector3& origin, const QAngle& angles, int event, const char* options, const float* cycleTime, const int* animationLayerIndex) = 0; // 211
++	virtual void AnimEventScriptCallback(const char* name) = 0; // 212
++	virtual void StandardBlendingRules(const CStudioHdr* hdr, Vector3* positions, Quaternion* rotations, Vector3* scales, float currentTime, const BoneList* boneList) = 0; // 213
++	virtual void AccumulateLayers(IBoneSetup& boneSetup, Vector3* positions, Quaternion* rotations, Vector3* scales, float currentTime) = 0; // 214
++	virtual Vector3 GetThirdPersonViewPosition() = 0; // 215
++	virtual bool IsClientRagdoll() const = 0; // 216
++	virtual C_BaseAnimating* BecomeRagdollOnClient() = 0; // 217
++	virtual C_ClientRagdoll* CreateClientRagdoll(bool restoring) = 0; // 218
++	virtual void SaveRagdollInfo(int boneCount, const matrix3x4_t& parentTransform, C_BoneAccessor& boneAccessor) = 0; // 219
++	virtual bool RetrieveRagdollInfo(Vector3* positions, Quaternion* rotations) = 0; // 220
++	virtual void GetRagdollInitBoneArrays(matrix3x4_t* previousBones, matrix3x4_t* nextBones, matrix3x4_t* currentBones, float boneDt) = 0; // 221
++	virtual void ClearAnimationSoundsAndEffects(const CStudioHdr* hdr, int sequence, float cycleBegin) = 0; // 222
++	virtual void StudioFrameAdvance() = 0; // 223
++	virtual void UpdateClientSideAnimation() = 0; // 224
++	virtual unsigned int ComputeClientSideAnimationFlags() = 0; // 225
++	// Retail byte this+0x1020; matching typed Apex m_bSequenceFinished getter.
++	virtual bool IsActivityFinished() = 0; // 226
++	virtual bool ForbidThreadedBoneSetup() const = 0; // 227
++private:
++	virtual void UnknownEntity228() = 0;
++public:
++	virtual C_BaseAnimating* GetBoneSetupDependency() = 0; // 229
++	virtual void ClearPredictedAnimEvents() = 0; // 230
++	virtual void ExecPredictedAnimEvent(int event, const char* options) = 0; // 231
++	virtual void OnScriptAnimStart(int sequence) = 0; // 232
++	virtual bool Weapon_ShouldSmartAmmoLockOn(C_BaseEntity* target, C_WeaponX* weapon, int lockType) = 0; // 233
++	virtual void FormatViewModelAttachment(int attachment, matrix3x4_t& matrix) = 0; // 234
++	virtual bool IsMenuModel() const = 0; // 235
++	// Retail calls renderable SetupBones(nullptr,-1,0x200 or 0x300,curtime); matching typed Apex CalcAttachments.
++	virtual bool CalcAttachments() = 0; // 236
++private:
++	virtual void UnknownEntity237() = 0;
++public:
++	virtual bool UpdateBlending(int flags, const RenderableInstance_t& instance) = 0; // 238
++};
++
++static_assert(sizeof(C_BaseAnimating) == 0x30);
+diff --git a/include/client/baseanimatingoverlay.h b/include/client/baseanimatingoverlay.h
+new file mode 100644
+index 000000000..a0fcfd649
+--- /dev/null
++++ b/include/client/baseanimatingoverlay.h
+@@ -0,0 +1,9 @@
++#pragma once
++
++#include "client/baseanimating.h"
++
++class C_BaseAnimatingOverlay : public C_BaseAnimating
++{
++};
++
++static_assert(sizeof(C_BaseAnimatingOverlay) == 0x30);
+diff --git a/include/client/basecombatcharacter.h b/include/client/basecombatcharacter.h
+new file mode 100644
+index 000000000..184e5e261
+--- /dev/null
++++ b/include/client/basecombatcharacter.h
+@@ -0,0 +1,43 @@
++#pragma once
++
++#include "client/baseanimatingoverlay.h"
++
++class C_WeaponX;
++class C_GrappleHook;
++struct GrappleData_Client;
++
++class C_BaseCombatCharacter : public C_BaseAnimatingOverlay
++{
++private:
++	virtual void UnknownEntity239() = 0;
++	virtual void UnknownEntity240() = 0;
++public:
++	virtual bool Weapon_Switch(C_WeaponX* weapon) = 0; // 241
++	virtual bool Weapon_CanSwitchTo(C_WeaponX* weapon, bool checkAmmo) = 0; // 242
++	virtual bool Weapon_IsPlaying3pEquipActivity() = 0; // 243
++	virtual bool Weapon_IsPlaying3pReloadActivity() = 0; // 244
++	virtual const char* GetWeaponClass() const = 0; // 245
++	virtual void OnChangeActiveWeapon(C_WeaponX* oldWeapon, C_WeaponX* newWeapon) = 0; // 246
++private:
++	virtual void UnknownEntity247() = 0;
++	virtual void UnknownEntity248() = 0;
++public:
++	virtual void Weapon_EndGestureAnim(int activity, float blendOut) = 0; // 249
++	virtual void GrappleDetach() = 0; // 250
++	virtual bool IsGrappleActive() const = 0; // 251
++	virtual GrappleData_Client* GetGrappleData() = 0; // 252
++	virtual C_GrappleHook* GetGrappleHook() = 0; // 253
++	virtual float GetHullWidth() const = 0; // 254
++	virtual float GetHullHeight() const = 0; // 255
++	virtual bool PlayerMelee_ExecutionStartAttacker(float expectedEndTime) = 0; // 256
++	virtual bool PlayerMelee_ExecutionStartTarget(C_BaseEntity* attacker) = 0; // 257
++	virtual bool PlayerMelee_ExecutionEndAttacker() = 0; // 258
++	virtual bool PlayerMelee_ExecutionEndTarget() = 0; // 259
++	virtual Vector3 ScriptGetPlayerOrNPCViewVector() = 0; // 260
++	virtual Vector3 ScriptGetPlayerOrNPCViewForward() = 0; // 261
++	virtual Vector3 ScriptGetPlayerOrNPCViewUp() = 0; // 262
++	virtual Vector3 ScriptGetPlayerOrNPCViewRight() = 0; // 263
++	virtual void PrintInventory() = 0; // 264
++};
++
++static_assert(sizeof(C_BaseCombatCharacter) == 0x30);
+diff --git a/include/client/baseentity.h b/include/client/baseentity.h
+new file mode 100644
+index 000000000..a9da55b95
+--- /dev/null
++++ b/include/client/baseentity.h
+@@ -0,0 +1,248 @@
++#pragma once
++
++#include "client/icliententity.h"
++
++#include "client/iclientmodelrenderable.h"
++
++
++#include "engine/ICollideable.h"
++#include "gametrace.h"
++
++class ISave;
++class IRestore;
++class C_WeaponX;
++class C_BaseCombatWeapon;
++class C_TitanSoul;
++class CParticleEffect;
++struct ScriptClassDesc_t;
++struct Quaternion;
++struct ClientInterpolationSnapshot;
++struct VisibleToLocalPlayerTrace;
++
++struct datamap_t;
++class IPhysicsObject;
++class C_BaseAnimating;
++class C_BaseAnimatingOverlay;
++class C_BaseCombatCharacter;
++class C_Player;
++class C_RopeKeyframe;
++class C_ScriptProp;
++class C_Beam;
++class C_DynamicProp;
++
++class C_BaseEntity : public IClientEntity, public IClientModelRenderable
++{
++public:
++	virtual datamap_t* GetDataDescMap() = 0; // 13
++	virtual int YouForgotToImplementOrDeclareClientClass() = 0; // 14
++	virtual datamap_t* GetPredDescMap() = 0; // 15
++	virtual const datamap_t* GetPredDescMapConst() const = 0; // 16
++	virtual ScriptClassDesc_t* GetScriptDesc() = 0; // 17
++private:
++	virtual void UnknownEntity018() = 0;
++	virtual void UnknownEntity019() = 0;
++	virtual void UnknownEntity020() = 0;
++public:
++	virtual int GetTracerAttachment() = 0; // 21
++	virtual C_BaseEntity* GetTracerEntity() = 0; // 22
++	virtual const char* GetTracerType() const = 0; // 23
++	virtual int GetArmorType() const = 0; // 24
++private:
++	virtual void UnknownEntity025() = 0;
++public:
++	virtual void Spawn() = 0; // 26
++	virtual void SpawnClientEntity() = 0; // 27
++	virtual void Precache() = 0; // 28
++	virtual void Activate() = 0; // 29
++private:
++	virtual void UnknownEntity030() = 0;
++public:
++	virtual bool KeyValue(const char* key, const char* value) = 0; // 31
++	virtual bool GetKeyValue(const char* key, char* value, int maxLength) = 0; // 32
++	virtual int GetSpawnCounter() const = 0; // 33
++	virtual bool Entity_Init(int entityIndex, int serialNumber, bool clientOnly) = 0; // 34
++	virtual const C_BaseAnimating* GetBaseAnimatingConst() const = 0; // 35
++	virtual C_BaseAnimating* GetBaseAnimating() = 0; // 36
++	virtual const C_BaseAnimatingOverlay* GetBaseAnimatingOverlayConst() const = 0; // 37
++	virtual C_BaseAnimatingOverlay* GetBaseAnimatingOverlay() = 0; // 38
++	virtual C_RopeKeyframe* GetRopeKeyframe() = 0; // 39
++	virtual void SetClassname(const char* classname) = 0; // 40
++	virtual bool IsFirstPersonProxy() = 0; // 41
++	virtual bool IsViewModel() = 0; // 42
++	virtual bool SkipsAnimationData() = 0; // 43
++	virtual float GetIKHeightOffset() const = 0; // 44
++	virtual int Classify() const = 0; // 45
++	virtual void ReleaseNoDeleteSelf() = 0; // 46
++	virtual void CalcRenderOriginAndAngles(Vector3& origin, QAngle& angles) = 0; // 47
++	virtual bool IsTransparentPrimary() = 0; // 48
++	virtual bool TestCollision(const Ray_t& ray, unsigned int contentsMask, trace_t& trace) = 0; // 49
++	virtual bool TestHitboxes(const Ray_t& ray, unsigned int contentsMask, trace_t& trace) = 0; // 50
++private:
++	virtual void UnknownEntity051() = 0;
++	virtual void UnknownEntity052() = 0;
++public:
++	virtual C_BaseEntity* GetViewModelOwner() = 0; // 53
++	virtual float GetAttackDamageScale() const = 0; // 54
++	virtual void MoveFieldsIntoLerpingStruct(float time) = 0; // 55
++	virtual void PostDataUpdateThreaded(DataUpdateType_t updateType) = 0; // 56
++	virtual void SetDormant(bool dormant) = 0; // 57
++	virtual bool ShouldSavePhysics() = 0; // 58
++	virtual void OnSave() = 0; // 59
++	virtual void OnRestore() = 0; // 60
++	virtual int ObjectCaps() = 0; // 61
++	virtual int Save(ISave& save) = 0; // 62
++	virtual int Restore(IRestore& restore) = 0; // 63
++	virtual bool CreateVPhysics() = 0; // 64
++	virtual void VPhysicsDestroyObject() = 0; // 65
++	virtual void VPhysicsUpdate(IPhysicsObject* physicsObject) = 0; // 66
++	virtual void VPhysicsShadowUpdate(IPhysicsObject* physicsObject) = 0; // 67
++	virtual int VPhysicsGetObjectList(IPhysicsObject** list, int maxCount) = 0; // 68
++	virtual bool SetupBones_MayUseFootIk() = 0; // 69
++private:
++	virtual void UnknownEntity070() = 0;
++public:
++	virtual const Vector3& GetPrevAbsOrigin() const = 0; // 71
++	virtual void Teleport(const Vector3* position, const QAngle* angles, const Vector3* velocity) = 0; // 72
++	virtual void PreNewModel() = 0; // 73
++	virtual void PostNewModel() = 0; // 74
++	virtual const Vector3& GetBoundingMins() const = 0; // 75
++	virtual const Vector3& GetBoundingMaxs() const = 0; // 76
++	virtual Vector3 Script_GetBoundingMins() const = 0; // 77
++	virtual Vector3 Script_GetBoundingMaxs() const = 0; // 78
++	virtual const Vector3& WorldSpaceCenter() const = 0; // 79
++	virtual void ComputeWorldSpaceSurroundingBox(Vector3* mins, Vector3* maxs) = 0; // 80
++	virtual void GetVectors(Vector3* forward, Vector3* right, Vector3* up) const = 0; // 81
++	virtual SolidType_t GetSolid() const = 0; // 82
++	virtual int GetSolidFlags() const = 0; // 83
++	virtual bool GetAttachmentOrigin(int attachment, Vector3& origin) = 0; // 84
++	virtual bool GetAttachmentVelocity(int attachment, Vector3& originVelocity, Quaternion& angleVelocity) = 0; // 85
++	virtual bool GetHitboxAttachmentVelocity(int hitbox, Vector3& originVelocity, Quaternion& angleVelocity) = 0; // 86
++	virtual bool GetHitboxAttachment(int hitbox, Vector3& origin, QAngle& angles) = 0; // 87
++	virtual void InvalidateAttachments() = 0; // 88
++	virtual int GetTeamNumber() const = 0; // 89
++	virtual void ChangeTeam(int teamNumber) = 0; // 90
++private:
++	virtual void UnknownEntity091() = 0;
++	virtual void UnknownEntity092() = 0;
++public:
++	virtual bool CastsShadows() = 0; // 93
++	virtual void UpdatePartitionListEntry() = 0; // 94
++	virtual bool InitializeAsClientEntity(const char* modelName, bool renderWithViewModels) = 0; // 95
++	virtual bool Simulate() = 0; // 96
++	virtual bool CanStandOn(C_BaseEntity* surface) const = 0; // 97
++	virtual void GetAimEntOrigin(IClientEntity* entity, Vector3* origin, QAngle* angles) = 0; // 98
++	virtual bool ShouldRenderAlways() const = 0; // 99
++	virtual int ComputeTranslucencyType() = 0; // 100
++	virtual bool ComputeSortPriority() = 0; // 101
++	virtual int GetCollideType() = 0; // 102
++	virtual void UpdateVisibility() = 0; // 103
++	virtual bool ShouldSuppressForSplitScreenPlayer(int splitScreenSlot) = 0; // 104
++	virtual bool IsImmuneToPhaseShiftInvisibility(C_Player* viewPlayer) const = 0; // 105
++	virtual bool IsSelfAnimating() = 0; // 106
++	virtual void OnNewParticleEffect(const char* name, CParticleEffect* effect) = 0; // 107
++	virtual void OnParticleEffectDeleted(CParticleEffect* effect) = 0; // 108
++	virtual void ResetIK() = 0; // 109
++	virtual int InterpolateFieldsInternal(float currentTime, const ClientInterpolationSnapshot* secondSnapshot, float secondSnapshotTime) = 0; // 110
++private:
++	virtual void UnknownEntity111() = 0;
++public:
++	virtual bool DidEntityTeleport() = 0; // 112
++	virtual bool IsSubModel() = 0; // 113
++	virtual int DrawBrushModel(const CViewSetup* view, int flags) = 0; // 114
++	virtual float GetTextureAnimationStartTime() = 0; // 115
++	virtual void TextureAnimationWrapped() = 0; // 116
++	virtual void SetNextClientThink(float nextThinkTime) = 0; // 117
++	virtual void SetHealth(int health) = 0; // 118
++	virtual C_TitanSoul* GetTitanSoul() const = 0; // 119
++	virtual C_BaseCombatCharacter* TitanSoul_GetTitan() = 0; // 120
++	virtual bool IsPredictedProjectile() const = 0; // 121
++	virtual void UpdateOnRemove() = 0; // 122
++	virtual void SUB_Remove() = 0; // 123
++	virtual CBaseHandle GetEntForDecal() = 0; // 124
++	virtual C_Player* GetPredictionOwner() = 0; // 125
++	virtual void InitPredictable(C_Player* owner, const char* context) = 0; // 126
++	virtual void SetPredictable(bool predictable) = 0; // 127
++	virtual bool PredictionErrorShouldResetLatchedForAllPredictables() = 0; // 128
++	virtual bool PredictionIsPhysicallySimulated() = 0; // 129
++	virtual void FindNonWorldTimeEntities() = 0; // 130
++	virtual void OnPostRestoreData() = 0; // 131
++	virtual bool IsMechanical() const = 0; // 132
++	virtual bool HasGibModel() const = 0; // 133
++	virtual void DispatchImpactEffects(C_BaseEntity* hitEntity, const Vector3& start, const Vector3& end, const Vector3& normal, short surfaceProp, int staticPropId, int damageType, int impactEffectTable, C_BaseEntity* otherEntity, unsigned int impactEffectFlags) = 0; // 134
++	virtual bool ShouldPredict() = 0; // 135
++	virtual void Think() = 0; // 136
++	virtual bool PreRender() = 0; // 137
++	virtual const char* GetClassname() const = 0; // 138
++	virtual bool IsCurrentlyTouching() const = 0; // 139
++	virtual void StartTouch(C_BaseEntity* other) = 0; // 140
++	virtual void Touch(C_BaseEntity* other, const trace_t* trace) = 0; // 141
++	virtual void EndTouch(C_BaseEntity* other) = 0; // 142
++	virtual unsigned int PhysicsSolidMaskForEntity() const = 0; // 143
++	virtual void ResolveFlyCollisionCustom(trace_t& trace, Vector3& velocity) = 0; // 144
++	virtual void PhysicsSimulate() = 0; // 145
++	virtual bool IsFuncBrush() const = 0; // 146
++	virtual bool IsMoving() = 0; // 147
++	virtual bool ShouldRegenerateOriginFromCellBits() const = 0; // 148
++	virtual bool IsPlayer() = 0; // 149
++	virtual bool IsTitan() const = 0; // 150
++	virtual bool IsTitanSoul() = 0; // 151
++	virtual bool IsOperator() const = 0; // 152
++	virtual bool IsHuman() const = 0; // 153
++	virtual bool IsZipline() const = 0; // 154
++	virtual bool IsBreakableGlass() = 0; // 155
++	virtual bool IsHologram() const = 0; // 156
++	virtual bool IsPlayerDecoy() = 0; // 157
++	virtual bool IsBaseCombatCharacter() = 0; // 158
++	virtual bool IsGrenade() = 0; // 159
++	virtual C_BaseCombatCharacter* MyCombatCharacterPointer() = 0; // 160
++	virtual C_Player* MyPlayerPointer() = 0; // 161
++	virtual C_ScriptProp* MyScriptPropPointer() = 0; // 162
++	virtual C_Beam* MyBeamPointer() = 0; // 163
++	virtual bool IsNPC() = 0; // 164
++	virtual bool IsPointCamera() = 0; // 165
++	virtual bool IsTurret() = 0; // 166
++	virtual bool DisallowsGrapple() = 0; // 167
++	virtual C_DynamicProp* MyDynamicPropPointer() = 0; // 168
++	virtual bool IsSprite() = 0; // 169
++	virtual bool IsProp() = 0; // 170
++	virtual bool IsWeaponX() const = 0; // 171
++	virtual bool IsCombatWeaponClone() = 0; // 172
++	virtual const C_WeaponX* MyWeaponXPointerConst() const = 0; // 173
++	virtual C_WeaponX* MyWeaponXPointer() = 0; // 174
++	virtual const C_BaseCombatWeapon* MyCombatWeaponPointerConst() const = 0; // 175
++	virtual C_BaseCombatWeapon* MyCombatWeaponPointer() = 0; // 176
++private:
++	virtual void UnknownEntity177() = 0;
++public:
++	virtual bool IsProjectile() = 0; // 178
++	virtual bool IsGrapplingHook() = 0; // 179
++	virtual Vector3 EyePosition() = 0; // 180
++	virtual Vector3 PositionBetweenEyes() = 0; // 181
++	virtual QAngle EyeAngles() = 0; // 182
++	virtual QAngle LocalEyeAngles() = 0; // 183
++	virtual Vector3 EarPosition() = 0; // 184
++	virtual bool ShouldCollideByVelocity(const Vector3& velocity) const = 0; // 185
++	virtual bool ShouldCollide(const C_BaseEntity* other, int collisionGroup, int contentsMask) const = 0; // 186
++	virtual float GetGravity() const = 0; // 187
++	virtual void GetGroundVelocityToApply(Vector3& velocity) = 0; // 188
++	virtual bool ShouldInterpolate() = 0; // 189
++	virtual void OnMoveParentRendered() = 0; // 190
++	virtual bool IsCloaked(bool includeFade) = 0; // 191
++	virtual bool DoesInheritParentCloak() = 0; // 192
++	virtual bool ShouldPushPhasedEntities() const = 0; // 193
++	virtual bool IsPhaseShifted() const = 0; // 194
++	virtual const char* GetTitleForUI() const = 0; // 195
++	virtual bool OnPredictedEntityRemove(bool isBeingRemoved, C_BaseEntity* predicted) = 0; // 196
++private:
++	virtual void UnknownEntity197() = 0;
++	virtual void UnknownEntity198() = 0;
++	virtual void UnknownEntity199() = 0;
++public:
++	virtual int GetStudioBody() const = 0; // 200
++	virtual void OnPositionChanged() = 0; // 201
++	virtual void PerformCustomPhysics(Vector3* position, Vector3* velocity, QAngle* angles, QAngle* angularVelocity) = 0; // 202
++	virtual bool CollisionExplodesMissiles() const = 0; // 203
++	virtual VisibleToLocalPlayerTrace* GetVisibileToPlayerLocalTrace() = 0; // 204
++};
++
++static_assert(sizeof(C_BaseEntity) == 0x30);
+diff --git a/include/client/icliententity.h b/include/client/icliententity.h
+new file mode 100644
+index 000000000..1c446f45a
+--- /dev/null
++++ b/include/client/icliententity.h
+@@ -0,0 +1,18 @@
++#pragma once
++
++#include "client/iclientunknown.h"
++#include "client/iclientrenderable.h"
++#include "client/iclientnetworkable.h"
++#include "client/iclientthinkable.h"
++
++class IClientEntity : public IClientUnknown, public IClientRenderable, public IClientNetworkable, public IClientThinkable
++{
++public:
++	virtual const Vector3& GetAbsOrigin() const = 0;
++	virtual const QAngle& GetAbsAngles() const = 0;
++	virtual bool IsBlurred() = 0; // 10
++	virtual const char* GetModelIndexName() const = 0; // 11
++	virtual const char* EngineGetDebugName() = 0;
++};
++
++static_assert(sizeof(IClientEntity) == 0x28);
+diff --git a/include/client/iclientmodelrenderable.h b/include/client/iclientmodelrenderable.h
+new file mode 100644
+index 000000000..9d78f27cf
+--- /dev/null
++++ b/include/client/iclientmodelrenderable.h
+@@ -0,0 +1,9 @@
++#pragma once
++
++class IClientModelRenderable
++{
++private:
++	virtual void UnknownModelRenderable000() = 0;
++};
++
++static_assert(sizeof(IClientModelRenderable) == sizeof(void*));
+diff --git a/include/client/iclientnetworkable.h b/include/client/iclientnetworkable.h
+new file mode 100644
+index 000000000..522ad8991
+--- /dev/null
++++ b/include/client/iclientnetworkable.h
+@@ -0,0 +1,47 @@
++#pragma once
++
++class ClientClass;
++class IClientUnknown;
++struct LerpData;
++
++enum DataUpdateType_t : int
++{
++	DATA_UPDATE_INVALID = 0,
++	DATA_UPDATE_CREATED = 1,
++	DATA_UPDATE_DATATABLE_CHANGED = 2,
++};
++
++enum ShouldTransmitState_t : int
++{
++	SHOULDTRANSMIT_START = 0,
++	SHOULDTRANSMIT_END = 1,
++};
++
++class IClientNetworkable
++{
++public:
++	virtual IClientUnknown* GetIClientUnknown() = 0; // 0
++	virtual void Release() = 0; // 1
++	virtual ClientClass* GetClientClass() = 0; // 2
++	virtual void NotifyShouldTransmit(ShouldTransmitState_t state) = 0; // 3
++	virtual void OnPreDataChanged(DataUpdateType_t updateType) = 0; // 4
++	virtual void OnDataChangedPreAnim(DataUpdateType_t updateType) = 0; // 5
++	virtual void OnDataChanged(DataUpdateType_t updateType) = 0; // 6
++	virtual void PreDataUpdate(DataUpdateType_t updateType) = 0; // 7
++	virtual void PostDataUpdate(DataUpdateType_t updateType, float oldTime, float newTime) = 0; // 8
++	virtual void CalculateLocalPlayer(DataUpdateType_t updateType) = 0; // 9
++	virtual void OnFinishAllNetUpdates(DataUpdateType_t updateType) = 0; // 10
++	virtual void PostDataOnCreate() = 0; // 11
++	virtual void RecalculateOrigin() = 0; // 12
++	virtual void UpdateMoveParent() = 0; // 13
++	virtual void PreSnapshotTransition() = 0; // 14
++	virtual LerpData* GetLerpData() = 0; // 15
++	virtual bool IsDormant() const = 0; // 16
++	virtual int entindex() const = 0; // 17
++	virtual void* GetDataTableBasePtr() = 0; // 18
++	virtual void SetDestroyedOnRecreateEntities() = 0; // 19
++	virtual void FakeRelease() = 0; // 20
++	virtual void FakeRecreate() = 0; // 21
++};
++
++static_assert(sizeof(IClientNetworkable) == sizeof(void*));
+diff --git a/include/client/iclientrenderable.h b/include/client/iclientrenderable.h
+index 51d067848..374661b5e 100644
+--- a/include/client/iclientrenderable.h
++++ b/include/client/iclientrenderable.h
+@@ -59,7 +59,7 @@ class IClientRenderable
+ 	virtual float GetModelScale() const = 0; // 21
+ 	virtual std::int32_t LookupAttachment(const char* pAttachmentName) = 0; // 22
+ 	virtual bool GetAttachment(std::int32_t number, matrix3x4_t& matrix) = 0; // 23
+-	virtual bool GetAttachment(std::int32_t number, Vector3& origin, QAngle& angles) = 0; // 24
++	virtual bool GetAttachmentOriginAngles(std::int32_t number, Vector3& origin, QAngle& angles) = 0; // 24
+ 	virtual float* GetRenderClipPlane() = 0; // 25
+ 	virtual bool UsesPowerOfTwoFrameBufferTexture(std::int32_t splitScreenSlot) = 0; // 26
+ 	virtual bool UsesFullFrameBufferTexture(std::int32_t splitScreenSlot) = 0; // 27
+diff --git a/include/client/iclientthinkable.h b/include/client/iclientthinkable.h
+new file mode 100644
+index 000000000..3c239d468
+--- /dev/null
++++ b/include/client/iclientthinkable.h
+@@ -0,0 +1,18 @@
++#pragma once
++
++#include <cstdint>
++
++class IClientUnknown;
++using ClientThinkHandle_t = std::uint16_t;
++
++class IClientThinkable
++{
++public:
++	virtual IClientUnknown* GetIClientUnknown() = 0; // 0
++	virtual void ClientThink() = 0; // 1
++	virtual ClientThinkHandle_t GetThinkHandle() = 0; // 2
++	virtual void SetThinkHandle(ClientThinkHandle_t handle) = 0; // 3
++	virtual void Release() = 0; // 4
++};
++
++static_assert(sizeof(IClientThinkable) == sizeof(void*));
+diff --git a/include/client/iclientunknown.h b/include/client/iclientunknown.h
+new file mode 100644
+index 000000000..4bcd52d7f
+--- /dev/null
++++ b/include/client/iclientunknown.h
+@@ -0,0 +1,24 @@
++#pragma once
++
++#include "engine/ihandleentity.h"
++
++class C_BaseEntity;
++class IClientEntity;
++class IClientNetworkable;
++class IClientRenderable;
++class IClientThinkable;
++class ICollideable;
++
++class IClientUnknown : public IHandleEntity
++{
++public:
++	virtual ICollideable* GetCollideable() = 0; // 2
++	virtual IClientNetworkable* GetClientNetworkable() = 0; // 3
++	virtual IClientRenderable* GetClientRenderable() = 0; // 4
++	virtual IClientEntity* GetIClientEntity() = 0; // 5
++	virtual C_BaseEntity* GetBaseEntity() = 0; // 6
++	virtual IClientThinkable* GetClientThinkable() = 0; // 7
++};
++
++static_assert(sizeof(IClientUnknown) == 0x10);
++
+diff --git a/include/client/player.h b/include/client/player.h
+new file mode 100644
+index 000000000..b481d79bb
+--- /dev/null
++++ b/include/client/player.h
+@@ -0,0 +1,11 @@
++#pragma once
++
++#include "client/basecombatcharacter.h"
++
++class C_Player : public C_BaseCombatCharacter
++{
++public:
++	bool IsMantling() const;
++};
++
++static_assert(sizeof(C_Player) == 0x30);
+diff --git a/include/eiface.h b/include/eiface.h
+index ea588125b..d122cabb0 100644
+--- a/include/eiface.h
++++ b/include/eiface.h
+@@ -23,8 +23,8 @@ struct CGlobalVars;
+ struct CSaveRestoreData;
+ struct CStandardSendProxies;
+ struct ServerClass;
+-struct datamap_t;
+-struct typedescription_t;
++struct ServerDataMap;
++struct ServerTypeDescription;
+ 
+ inline constexpr char SERVER_GAME_DLL_INTERFACE_VERSION[] = "ServerGameDLL005";
+ inline constexpr char SERVER_GAME_ENTS_INTERFACE_VERSION[] = "ServerGameEnts002";
+@@ -90,9 +90,9 @@ class IServerGameDLL
+ 	virtual const char* GetGameDescription() = 0;
+ 	virtual void CreateNetworkStringTables() = 0;
+ 	virtual void SaveWriteFields(CSaveRestoreData* saveData, const char* name, void* baseData,
+-		datamap_t* dataMap, typedescription_t* fields, int fieldCount) = 0;
++		ServerDataMap* dataMap, ServerTypeDescription* fields, int fieldCount) = 0;
+ 	virtual void SaveReadFields(CSaveRestoreData* saveData, const char* name, void* baseData,
+-		datamap_t* dataMap, typedescription_t* fields, int fieldCount) = 0;
++		ServerDataMap* dataMap, ServerTypeDescription* fields, int fieldCount) = 0;
+ 	virtual void SaveGlobalState(CSaveRestoreData* saveData) = 0;
+ 	virtual void RestoreGlobalState(CSaveRestoreData* saveData) = 0;
+ 	virtual void PreSave(CSaveRestoreData* saveData) = 0;
+diff --git a/include/engine/client/clientstate.h b/include/engine/client/clientstate.h
+index f27e088a1..fe8ee94d0 100644
+--- a/include/engine/client/clientstate.h
++++ b/include/engine/client/clientstate.h
+@@ -21,11 +21,6 @@ class CClientState;
+ extern char* g_pLocalPlayerUserID;
+ extern char* g_pLocalPlayerOriginToken;
+ 
+-using CClientState__SendStringCmd_t = void (__fastcall*)(CClientState* self, const char* command);
+-extern CClientState__SendStringCmd_t CClientState__SendStringCmd;
+-
+-typedef bool (*CPlayer__IsMantling_t)(void* thisptr);
+-extern CPlayer__IsMantling_t CPlayer__IsMantling;
+ class SVC_Print;
+ class SVC_ServerInfo;
+ class CNetworkStringTableContainer;
+@@ -356,7 +351,7 @@ class CClientState : public INetChannelHandler, public IConnectionlessPacketHand
+ 	bool ProcessSignonStateInternal(eSignonState state, int serverCount, NET_SignonState* message);
+ 
+ 
+-	inline void SendStringCmd(const char* command) { CClientState__SendStringCmd(this, command); }
++	void SendStringCmd(const char* command);
+ 
+ 	~CClientState() override;
+ 	bool ConnectionStart(CNetChan* channel) override;
+diff --git a/include/engine/isplitscreen.h b/include/engine/isplitscreen.h
+new file mode 100644
+index 000000000..12d588bb5
+--- /dev/null
++++ b/include/engine/isplitscreen.h
+@@ -0,0 +1,25 @@
++#pragma once
++
++class CNetChan;
++
++class ISplitScreen
++{
++public:
++	virtual bool Init() = 0;
++	virtual void Shutdown() = 0;
++	virtual bool AddSplitScreenUser(int slot, int player) = 0;
++	virtual bool AddBaseUser(int slot, int player) = 0;
++	virtual bool RemoveSplitScreenUser(int slot, int player) = 0;
++	virtual int GetActiveSplitScreenPlayerSlot() = 0;
++	virtual int SetActiveSplitScreenPlayerSlot(int slot) = 0;
++	virtual bool IsValidSplitScreenSlot(int slot) = 0;
++	virtual int FirstValidSplitScreenSlot() = 0;
++	virtual int NextValidSplitScreenSlot(int slot) = 0;
++	virtual int GetNumSplitScreenPlayers() = 0;
++	virtual int GetSplitScreenPlayerEntity(int slot) = 0;
++	virtual CNetChan* GetSplitScreenPlayerNetChan(int slot) = 0;
++	virtual bool IsDisconnecting(int slot) = 0;
++	virtual void SetDisconnecting(int slot, bool disconnecting) = 0;
++	virtual bool SetLocalPlayerIsResolvable(const char* context, int line, bool resolvable) = 0;
++	virtual bool IsLocalPlayerResolvable() = 0;
++};
+diff --git a/include/networkvar.h b/include/networkvar.h
+new file mode 100644
+index 000000000..69a2a4909
+--- /dev/null
++++ b/include/networkvar.h
+@@ -0,0 +1,10 @@
++//========= Copyright Valve Corporation, All rights reserved. ============//
++#pragma once
++
++#define NETWORK_VAR_CHANGE_CALLBACKS( name ) \
++	virtual void NetworkStateChanged_##name() {} \
++	virtual void NetworkStateChanged_##name( void *pVar ) {}
++
++#define DISABLE_NETWORK_VAR_FOR_DERIVED( name ) \
++	NETWORK_VAR_CHANGE_CALLBACKS( name ) \
++	virtual bool IsNetworkVarEnabled_##name() { return false; }
+diff --git a/include/server/baseanimating.h b/include/server/baseanimating.h
+index 4adf50b5f..8958828b0 100644
+--- a/include/server/baseanimating.h
++++ b/include/server/baseanimating.h
+@@ -2,9 +2,61 @@
+ 
+ #include "server/baseentity.h"
+ 
++class CStudioHdr;
++class IBoneSetup;
++struct Quaternion;
++enum eSmartAmmoLockType : int;
++struct animevent_t;
++struct matrix3x4_t;
++
+ class CBaseAnimating : public CBaseEntity
+ {
+   public:
++    ServerClass* GetServerClass() override = 0; // 3
++    ServerDataMap* GetDataDescMap() override = 0; // 5
++    ScriptClassDesc_t* GetScriptDesc() override = 0; // 6
++    void DrawDebugTextOverlays() override = 0; // 35
++    int Restore(IRestore& restore) override = 0; // 37
++    void OnRestore() override = 0; // 40
++    const CBaseAnimating* GetBaseAnimatingConst() const override = 0; // 48
++    CBaseAnimating* GetBaseAnimating() override = 0; // 49
++    void GetVelocity(Vector3* velocity, Vector3* angularVelocity) override = 0; // 142
++    virtual float GetIdealSpeed() const = 0; // 245
++    virtual float GetIdealAccel() const = 0; // 246
++    virtual void StudioFrameAdvance() = 0; // 247
++    virtual bool IsActivityFinished() const = 0; // 248
++    virtual float GetSequenceGroundSpeed(CStudioHdr* studioHdr, int sequence) = 0; // 249
++    virtual bool Weapon_ShouldSmartAmmoLockOn(CBaseEntity* attacker, CWeaponX* weapon, eSmartAmmoLockType lockType) = 0; // 250
++    virtual bool BecomeRagdollOnClient(const Vector3& force) = 0; // 251
++    virtual bool IsRagdoll() = 0; // 252
++    virtual bool CanBecomeRagdoll() = 0; // 253
++    virtual bool BecomeRagdoll(const CTakeDamageInfo& info, const Vector3& force) = 0; // 254
++    virtual void GetBoneTransform(int bone, matrix3x4_t& transform) = 0; // 255
++    virtual void SetupBones(matrix3x4_t* boneToWorld, int boneMask, int boneCacheFlags) = 0; // 256
++    virtual void DispatchAnimEvents(CBaseAnimating* eventHandler) = 0; // 257
++    virtual void HandleAnimEvent(animevent_t* event) = 0; // 258
++    virtual void AnimEventScriptCallback(const char* options) = 0; // 259
++  protected:
++    virtual void PopulatePoseParameters() = 0; // 260
++    virtual void AccumulateLayers(IBoneSetup* boneSetup, Vector3* positions, Quaternion* rotations, Vector3* scales, float currentTime) = 0; // 261
++  public:
++    virtual bool GetAttachment(int attachment, matrix3x4_t& transform) = 0; // 262
++    virtual void OnScriptAnimStart(int sequence) = 0; // 263
++  protected:
++    virtual void ReservedEntitySlot264() = 0; // 264
++    virtual void ReservedEntitySlot265() = 0; // 265
++    virtual void ReservedEntitySlot266() = 0; // 266
++  public:
++    virtual void InitBoneControllers() = 0; // 267
++    virtual Vector3 GetGroundSpeedVelocity() = 0; // 268
++    virtual void InvalidateBoneCache() = 0; // 269
++    virtual bool IsViewModel() = 0; // 270
++  protected:
++    virtual void ReservedEntitySlot271() = 0; // 271
++  public:
++    virtual void ClearPredictedAnimEvents() = 0; // 272
++    virtual void ExecPredictedAnimEvent(int event, const char* options) = 0; // 273
++
+     std::byte m_Reserved09E0[0x24];
+     int32_t m_camoIndex;  // 0xA04
+     int32_t m_decalIndex; // 0xA08
+diff --git a/include/server/baseanimatingoverlay.h b/include/server/baseanimatingoverlay.h
+index b374eb9c8..6cd9656df 100644
+--- a/include/server/baseanimatingoverlay.h
++++ b/include/server/baseanimatingoverlay.h
+@@ -4,7 +4,19 @@
+ 
+ class CBaseAnimatingOverlay : public CBaseAnimating
+ {
++  public:
++    ServerClass* GetServerClass() override = 0; // 3
++    ServerDataMap* GetDataDescMap() override = 0; // 5
++    void Spawn() override = 0; // 23
++    void OnRestore() override = 0; // 40
++    const CBaseAnimatingOverlay* GetBaseAnimatingOverlayConst() const override = 0; // 50
++    CBaseAnimatingOverlay* GetBaseAnimatingOverlay() override = 0; // 51
++    void StudioFrameAdvance() override = 0; // 247
++    void DispatchAnimEvents(CBaseAnimating* eventHandler) override = 0; // 257
++
+   protected:
++    void AccumulateLayers(IBoneSetup* boneSetup, Vector3* positions, Quaternion* rotations, Vector3* scales, float currentTime) override = 0; // 261
++
+     std::byte m_Reserved0EB8[0x188];
+ };
+ 
+diff --git a/include/server/basecombatcharacter.h b/include/server/basecombatcharacter.h
+index f1769fbae..dcbeaeb60 100644
+--- a/include/server/basecombatcharacter.h
++++ b/include/server/basecombatcharacter.h
+@@ -2,9 +2,111 @@
+ 
+ #include "server/baseanimatingoverlay.h"
+ 
++struct impactdamagetable_t;
++struct SQVM;
++
+ class CBaseCombatCharacter : public CBaseAnimatingOverlay
+ {
+   public:
++    ServerClass* GetServerClass() override = 0; // 3
++    ServerDataMap* GetDataDescMap() override = 0; // 5
++    ScriptClassDesc_t* GetScriptDesc() override = 0; // 6
++    void Spawn() override = 0; // 23
++    int OnTakeDamage(const CTakeDamageInfo& info) override = 0; // 60
++    int TakeHealth(float health, int damageType) override = 0; // 62
++    void Event_Killed(const CTakeDamageInfo& info) override = 0; // 63
++    int Restore(IRestore& restore) override = 0; // 37
++    const CBaseCombatCharacter* MyCombatCharacterPointerConst() const override = 0; // 68
++    CBaseCombatCharacter* MyCombatCharacterPointer() override = 0; // 69
++    void PhysicsSimulate() override = 0; // 116
++    void UpdateOnRemove() override = 0; // 117
++    void HandleAnimEvent(animevent_t* event) override = 0; // 258
++    virtual const impactdamagetable_t& GetPhysicsImpactDamageTable() = 0; // 274
++    virtual bool FInViewCone(const Vector3& point) = 0; // 275
++    virtual bool FInViewConeEntity(CBaseEntity* entity) = 0; // 276
++    virtual bool FInAimCone(const Vector3& point) = 0; // 277
++    virtual bool FInAimConeEntity(CBaseEntity* entity) = 0; // 278
++  protected:
++    virtual void ReservedEntitySlot279() = 0; // 279
++  public:
++    virtual QAngle BodyAngles() const = 0; // 280
++    virtual Vector3 BodyDirection2D() const = 0; // 281
++    virtual Vector3 BodyDirection3D() const = 0; // 282
++    virtual Vector3 HeadDirection2D() = 0; // 283
++    virtual Vector3 HeadDirection3D() = 0; // 284
++    virtual Vector3 EyeDirection2D() = 0; // 285
++    virtual Vector3 EyeDirection3D() = 0; // 286
++    virtual int NPC_TranslateActivity(int activity) = 0; // 287
++    virtual float ScriptGetAttackSpreadAngle() = 0; // 288
++    virtual void ScriptGiveExistingWeapon(CBaseEntity* weapon) = 0; // 289
++  protected:
++    virtual void ReservedEntitySlot290() = 0; // 290
++    virtual void ReservedEntitySlot291() = 0; // 291
++  public:
++    virtual bool Weapon_Detach(CBaseCombatWeapon* weapon) = 0; // 292
++    virtual bool Weapon_Switch(CBaseCombatWeapon* weapon) = 0; // 293
++    virtual bool Weapon_CanSwitchTo(CBaseCombatWeapon* weapon, bool checkDeploy) = 0; // 294
++    virtual bool Weapon_IsPlaying3pEquipActivity() const = 0; // 295
++    virtual bool Weapon_IsPlaying3pReloadActivity() const = 0; // 296
++    virtual Vector3 Weapon_ShootPosition() = 0; // 297
++    virtual const char* GetWeaponClass() const = 0; // 298
++    virtual void SetActiveWeapon(CBaseCombatWeapon* weapon) = 0; // 299
++    virtual void OnChangeActiveWeapon(CBaseCombatWeapon* oldWeapon, CBaseCombatWeapon* newWeapon) = 0; // 300
++  protected:
++    virtual void ReservedEntitySlot301() = 0; // 301
++  public:
++    virtual void Weapon_StartGestureAnim(int activity, float duration, bool autokill) = 0; // 302
++    virtual void Weapon_EndGestureAnim(int activity, float fadeOut) = 0; // 303
++    virtual void ScriptTakeWeapon(const char* weaponName) = 0; // 304
++    virtual void ScriptTakeWeaponNow(const char* weaponName) = 0; // 305
++    virtual Vector3 ScriptGetPlayerOrNPCViewVector() = 0; // 306
++    virtual Vector3 ScriptGetPlayerOrNPCViewForward() = 0; // 307
++    virtual Vector3 ScriptGetPlayerOrNPCViewUp() = 0; // 308
++    virtual Vector3 ScriptGetPlayerOrNPCViewRight() = 0; // 309
++    virtual void SetOutOfBoundsDeadTime(float time) = 0; // 310
++    virtual float GetOutOfBoundsDeadTime() = 0; // 311
++    virtual int ScriptGiveWeapon(SQVM* vm) = 0; // 312
++  protected:
++    virtual void ReservedEntitySlot313() = 0; // 313
++  public:
++    virtual void GrappleDetach() = 0; // 314
++    virtual int OnTakeDamage_Alive(const CTakeDamageInfo& info) = 0; // 315
++    virtual int OnTakeDamage_Dying(const CTakeDamageInfo& info) = 0; // 316
++    virtual int OnTakeDamage_Dead(const CTakeDamageInfo& info) = 0; // 317
++    virtual Vector3 CalcDamageForceVector(const CTakeDamageInfo& info) = 0; // 318
++  protected:
++    virtual void ReservedEntitySlot319() = 0; // 319
++  public:
++    virtual void Event_Dying() = 0; // 320
++  protected:
++    virtual void ReservedEntitySlot321() = 0; // 321
++  public:
++    virtual CBaseEntity* CheckTraceHullAttackFromTo(const Vector3& start, const Vector3& end, const Vector3& mins, const Vector3& maxs, float damage, int damageType, float forceScale, bool damageAnyNPC) = 0; // 322
++    virtual CBaseEntity* CheckTraceHullAttack(float distance, const Vector3& mins, const Vector3& maxs, float damage, int damageType, float forceScale, bool damageAnyNPC) = 0; // 323
++    virtual float GetHullWidth() const = 0; // 324
++    virtual float GetHullHeight() const = 0; // 325
++  protected:
++    virtual void ReservedEntitySlot326() = 0; // 326
++    virtual void ReservedEntitySlot327() = 0; // 327
++    virtual void ReservedEntitySlot328() = 0; // 328
++    virtual void ReservedEntitySlot329() = 0; // 329
++    virtual void ReservedEntitySlot330() = 0; // 330
++    virtual void ReservedEntitySlot331() = 0; // 331
++    virtual void ReservedEntitySlot332() = 0; // 332
++    virtual void ReservedEntitySlot333() = 0; // 333
++    virtual void ReservedEntitySlot334() = 0; // 334
++    virtual void ReservedEntitySlot335() = 0; // 335
++  public:
++    virtual bool PlayerMelee_ExecutionStartAttacker(float duration) = 0; // 336
++    virtual bool PlayerMelee_ExecutionStartTarget(CBaseEntity* attacker) = 0; // 337
++    virtual bool PlayerMelee_ExecutionEndAttacker() = 0; // 338
++    virtual bool PlayerMelee_ExecutionEndTarget() = 0; // 339
++  protected:
++    virtual void ReservedEntitySlot340() = 0; // 340
++  public:
++    virtual void Event_LeechStart() = 0; // 341
++    virtual void Event_LeechEnd() = 0; // 342
++
+     CBaseEntity* GetActiveWeapon();
+     bool IsWeaponHolstered();
+     void HolsterWeapon();
+diff --git a/include/server/baseentity.h b/include/server/baseentity.h
+index 037acfac5..87049b6ff 100644
+--- a/include/server/baseentity.h
++++ b/include/server/baseentity.h
+@@ -5,15 +5,297 @@
+ 
+ #include "server/iserverentity.h"
+ #include "mathlib/vector.h"
+-#include "tier0/tier0_iface.h"
++#include "server/variant_t.h"
++#include "server/datamap.h"
++#include "gametrace.h"
++#include "networkvar.h"
++
++class CBaseAnimating;
++class CBaseAnimatingOverlay;
++class CBaseCombatCharacter;
++class CBaseCombatWeapon;
++class CWeaponX;
++class CRopeKeyframe;
++class CSkyCamera;
++class CBeam;
++class CSprite;
++class IPhysicsObject;
++class ISave;
++class IRestore;
++class CTakeDamageInfo;
++class CBaseTrigger;
++struct Ray_t;
++struct gamevcollisionevent_t;
++struct ServerClass;
++struct ScriptClassDesc_t;
+ 
+ class CBaseEntity : public IServerEntity
+ {
+   public:
+-    bool IsPlayer() const
+-    {
+-        return CallVFunc<bool>(83, this);
+-    }
++    virtual ServerClass* GetServerClass() = 0; // 3
++  protected:
++    virtual void ReservedEntitySlot004() = 0; // 4
++  public:
++    virtual ServerDataMap* GetDataDescMap() = 0; // 5
++    virtual ScriptClassDesc_t* GetScriptDesc() = 0; // 6
++    virtual void PreNewModel() = 0; // 7
++    virtual void PostNewModel() = 0; // 8
++  protected:
++    virtual void ReservedEntitySlot009() = 0; // 9
++  public:
++    virtual bool TestCollision(const Ray_t& ray, unsigned int contentsMask, trace_t& trace) = 0; // 10
++    virtual bool TestHitboxes(const Ray_t& ray, unsigned int contentsMask, trace_t& trace) = 0; // 11
++    virtual void ComputeWorldSpaceSurroundingBox(Vector3* worldMins, Vector3* worldMaxs) = 0; // 12
++  protected:
++    virtual void ReservedEntitySlot013() = 0; // 13
++  public:
++    virtual bool ShouldCollideByVelocity(const Vector3& velocity) = 0; // 14
++    virtual bool ShouldCollide(const CBaseEntity* other, int collisionGroup, int contentsMask) = 0; // 15
++    virtual void SetOwnerEntity(CBaseEntity* owner) = 0; // 16
++    virtual const CBaseEntity* GetOwnerEntityConst() const = 0; // 17
++    virtual CBaseEntity* GetOwnerEntity() = 0; // 18
++  protected:
++    virtual void ReservedEntitySlot019() = 0; // 19
++    virtual void ReservedEntitySlot020() = 0; // 20
++    virtual void ReservedEntitySlot021() = 0; // 21
++  public:
++    virtual const char* GetTracerType() = 0; // 22
++    virtual void Spawn() = 0; // 23
++    virtual void Precache() = 0; // 24
++    virtual void PostConstructor(const char* className) = 0; // 25
++    virtual void PostClientActive() = 0; // 26
++    virtual bool KeyValue(const char* key, const char* value) = 0; // 27
++    virtual bool GetKeyValue(const char* key, char* value, int maxLength) = 0; // 28
++    virtual void Activate() = 0; // 29
++    virtual CBaseEntity* GetViewModelOwner() = 0; // 30
++    virtual void SetParent(CBaseEntity* parent, int attachment) = 0; // 31
++    virtual int ObjectCaps() = 0; // 32
++    virtual bool AcceptInput(const char* inputName, CBaseEntity* activator, CBaseEntity* caller, variant_t value, int outputID) = 0; // 33
++    virtual void DrawDebugGeometryOverlays() = 0; // 34
++    virtual void DrawDebugTextOverlays() = 0; // 35
++    virtual int Save(ISave& save) = 0; // 36
++    virtual int Restore(IRestore& restore) = 0; // 37
++    virtual bool ShouldSavePhysics() = 0; // 38
++    virtual void OnSave() = 0; // 39
++    virtual void OnRestore() = 0; // 40
++  protected:
++    virtual void ReservedEntitySlot041() = 0; // 41
++  public:
++    virtual int RequiredEdictIndex() = 0; // 42
++    virtual void MoveDone() = 0; // 43
++    virtual void Think() = 0; // 44
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_nNextThinkTick ); // 45-47
++    virtual const CBaseAnimating* GetBaseAnimatingConst() const = 0; // 48
++    virtual CBaseAnimating* GetBaseAnimating() = 0; // 49
++    virtual const CBaseAnimatingOverlay* GetBaseAnimatingOverlayConst() const = 0; // 50
++    virtual CBaseAnimatingOverlay* GetBaseAnimatingOverlay() = 0; // 51
++    virtual CRopeKeyframe* GetRopeKeyframe() = 0; // 52
++    virtual CSkyCamera* GetAsSkyCamera() = 0; // 53
++    virtual int LookupAttachment(const char* name) = 0; // 54
++    virtual bool IsFirstPersonProxy() const = 0; // 55
++    virtual const CBaseTrigger* MyTriggerPointerConst() const = 0; // 56
++    virtual CBaseTrigger* MyTriggerPointer() = 0; // 57
++  protected:
++    virtual void ReservedEntitySlot058() = 0; // 58
++    virtual void ReservedEntitySlot059() = 0; // 59
++  public:
++    virtual int OnTakeDamage(const CTakeDamageInfo& info) = 0; // 60
++    virtual void AdjustDamageDirection(Vector3& direction) = 0; // 61
++    virtual int TakeHealth(float health, int damageType) = 0; // 62
++    virtual void Event_Killed(const CTakeDamageInfo& info) = 0; // 63
++    virtual void Event_KilledOther(CBaseEntity* victim, const CTakeDamageInfo& info) = 0; // 64
++  protected:
++    virtual void ReservedEntitySlot065() = 0; // 65
++    virtual void ReservedEntitySlot066() = 0; // 66
++  public:
++    virtual bool IsNPC() const = 0; // 67
++    virtual const CBaseCombatCharacter* MyCombatCharacterPointerConst() const = 0; // 68
++    virtual CBaseCombatCharacter* MyCombatCharacterPointer() = 0; // 69
++    virtual const CWeaponX* MyWeaponXPointerConst() const = 0; // 70
++    virtual CWeaponX* MyWeaponXPointer() = 0; // 71
++  protected:
++    virtual void ReservedEntitySlot072() = 0; // 72
++    virtual void ReservedEntitySlot073() = 0; // 73
++  public:
++    virtual CBeam* MyBeamPointer() = 0; // 74
++    virtual CSprite* MySpritePointer() = 0; // 75
++    virtual float GetDelay() = 0; // 76
++    virtual bool IsMoving() = 0; // 77
++    virtual bool IsFuncBrush() const = 0; // 78
++    virtual bool DisallowsGrapple() const = 0; // 79
++    virtual bool IsMechanical() const = 0; // 80
++  protected:
++    virtual void ReservedEntitySlot081() = 0; // 81
++  public:
++    virtual bool HasTarget(const char* targetName) = 0; // 82
++    virtual bool IsPlayer() const = 0; // 83
++    virtual bool IsTitan() const = 0; // 84
++    virtual bool IsTitanSoul() const = 0; // 85
++    virtual bool IsOperator() const = 0; // 86
++    virtual bool IsHuman() const = 0; // 87
++  protected:
++    virtual void ReservedEntitySlot088() = 0; // 88
++  public:
++    virtual bool IsRopeZipline() const = 0; // 89
++    virtual bool IsBreakableGlass() const = 0; // 90
++    virtual bool IsHologram() const = 0; // 91
++    virtual bool IsPlayerDecoy() const = 0; // 92
++    virtual bool IsNetClient() const = 0; // 93
++  protected:
++    virtual void ReservedEntitySlot094() = 0; // 94
++  public:
++    virtual bool IsProjectile() const = 0; // 95
++    virtual bool IsGrenade() const = 0; // 96
++    virtual bool IsGrapplingHook() const = 0; // 97
++    virtual bool IsTurret() const = 0; // 98
++  protected:
++    virtual void ReservedEntitySlot099() = 0; // 99
++  public:
++    virtual bool IsBaseCombatWeapon() const = 0; // 100
++    virtual const CBaseCombatWeapon* MyCombatWeaponPointerConst() const = 0; // 101
++    virtual CBaseCombatWeapon* MyCombatWeaponPointer() = 0; // 102
++  protected:
++    virtual void ReservedEntitySlot103() = 0; // 103
++  public:
++    virtual bool ChangeTeam(int team) = 0; // 104
++  protected:
++    virtual void ReservedEntitySlot105() = 0; // 105
++  public:
++    virtual bool CanStandOn(CBaseEntity* surface) const = 0; // 106
++    virtual const CBaseEntity* GetEnemyConst() const = 0; // 107
++    virtual CBaseEntity* GetEnemy() = 0; // 108
++  protected:
++    virtual void ReservedEntitySlot109() = 0; // 109
++  public:
++    virtual void StartTouch(CBaseEntity* other) = 0; // 110
++    virtual void Touch(CBaseEntity* other) = 0; // 111
++    virtual void EndTouch(CBaseEntity* other) = 0; // 112
++  protected:
++    virtual void ReservedEntitySlot113() = 0; // 113
++  public:
++    virtual void Blocked(CBaseEntity* other) = 0; // 114
++  protected:
++    virtual void ReservedEntitySlot115() = 0; // 115
++  public:
++    virtual void PhysicsSimulate() = 0; // 116
++    virtual void UpdateOnRemove() = 0; // 117
++  protected:
++    virtual void ReservedEntitySlot118() = 0; // 118
++    virtual void ReservedEntitySlot119() = 0; // 119
++    virtual void ReservedEntitySlot120() = 0; // 120
++    virtual void ReservedEntitySlot121() = 0; // 121
++    virtual void ReservedEntitySlot122() = 0; // 122
++    virtual void ReservedEntitySlot123() = 0; // 123
++    virtual void ReservedEntitySlot124() = 0; // 124
++    virtual void ReservedEntitySlot125() = 0; // 125
++    virtual void ReservedEntitySlot126() = 0; // 126
++    virtual void ReservedEntitySlot127() = 0; // 127
++    virtual void ReservedEntitySlot128() = 0; // 128
++    virtual void ReservedEntitySlot129() = 0; // 129
++    virtual void ReservedEntitySlot130() = 0; // 130
++    virtual void ReservedEntitySlot131() = 0; // 131
++    virtual void ReservedEntitySlot132() = 0; // 132
++  public:
++    virtual Vector3 EyePosition() = 0; // 133
++    virtual Vector3 EarPosition() = 0; // 134
++    virtual QAngle EyeAngles() = 0; // 135
++    virtual QAngle LocalEyeAngles() = 0; // 136
++  protected:
++    virtual void ReservedEntitySlot137() = 0; // 137
++    virtual void ReservedEntitySlot138() = 0; // 138
++    virtual void ReservedEntitySlot139() = 0; // 139
++  public:
++    virtual void GetVectors(Vector3* forward, Vector3* right, Vector3* up) const = 0; // 140
++    virtual Vector3 GetSmoothedVelocity() = 0; // 141
++    virtual void GetVelocity(Vector3* velocity, Vector3* angularVelocity) = 0; // 142
++    virtual float GetGravity() const = 0; // 143
++    virtual float GetFriction() const = 0; // 144
++    virtual bool FVisiblePosition(const Vector3& target, int traceMask, CBaseEntity** blocker) = 0; // 145
++    virtual bool FVisible(CBaseEntity* entity, int traceMask, CBaseEntity** blocker) = 0; // 146
++    virtual bool FVisibleFromPosition(const Vector3& source, const Vector3& target, int traceMask, CBaseEntity** blocker) = 0; // 147
++  protected:
++    virtual void ReservedEntitySlot148() = 0; // 148
++  public:
++    virtual void GetGroundVelocityToApply(Vector3& velocity) = 0; // 149
++    virtual Vector3 Script_GetBoundingMins() = 0; // 150
++    virtual Vector3 Script_GetBoundingMaxs() = 0; // 151
++    virtual const Vector3& WorldSpaceCenter() const = 0; // 152
++  protected:
++    virtual void ReservedEntitySlot153() = 0; // 153
++    virtual void ReservedEntitySlot154() = 0; // 154
++    virtual void ReservedEntitySlot155() = 0; // 155
++    virtual void ReservedEntitySlot156() = 0; // 156
++  public:
++    virtual void VPhysicsDestroyObject() = 0; // 157
++    virtual void VPhysicsSwapObject(IPhysicsObject* physics) = 0; // 158
++    virtual void VPhysicsUpdate(IPhysicsObject* physics) = 0; // 159
++    virtual int VPhysicsTakeDamage(const CTakeDamageInfo& info) = 0; // 160
++  protected:
++    virtual void ReservedEntitySlot161() = 0; // 161
++    virtual void ReservedEntitySlot162() = 0; // 162
++  public:
++    virtual void VPhysicsCollision(int index, gamevcollisionevent_t* event) = 0; // 163
++  protected:
++    virtual void ReservedEntitySlot164() = 0; // 164
++  public:
++    virtual void UpdatePhysicsShadowToCurrentPosition(float deltaTime) = 0; // 165
++    virtual int VPhysicsGetObjectList(IPhysicsObject** objects, int maxCount) = 0; // 166
++  protected:
++    virtual void ReservedEntitySlot167() = 0; // 167
++    virtual void ReservedEntitySlot168() = 0; // 168
++  public:
++    virtual unsigned int PhysicsSolidMaskForEntity() const = 0; // 169
++  protected:
++    virtual void ReservedEntitySlot170() = 0; // 170
++    virtual void ReservedEntitySlot171() = 0; // 171
++    virtual void ReservedEntitySlot172() = 0; // 172
++  public:
++    virtual void ResolveFlyCollisionCustom(trace_t& trace, Vector3& velocity) = 0; // 173
++  protected:
++    virtual void ReservedEntitySlot174() = 0; // 174
++    virtual void ReservedEntitySlot175() = 0; // 175
++    virtual void ReservedEntitySlot176() = 0; // 176
++    virtual void ReservedEntitySlot177() = 0; // 177
++  public:
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_nameVisibilityFlags ); // 178-180
++  protected:
++    virtual void ReservedEntitySlot181() = 0; // 181
++  public:
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_cloakEndTime ); // 182-184
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_cloakFadeInEndTime ); // 185-187
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_cloakFadeOutStartTime ); // 188-190
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_cloakFadeInDuration ); // 191-193
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_cloakFlickerAmount ); // 194-196
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_cloakFlickerEndTime ); // 197-199
++    virtual bool IsCloaked(bool includeFlicker) = 0; // 200
++    virtual bool DoesInheritParentCloak() = 0; // 201
++  protected:
++    virtual void ReservedEntitySlot202() = 0; // 202
++  public:
++    virtual bool IsPhaseShifted() = 0; // 203
++  protected:
++    virtual void ReservedEntitySlot204() = 0; // 204
++  public:
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_fFlags ); // 205-207
++    NETWORK_VAR_CHANGE_CALLBACKS( m_hGroundEntity ); // 208-209
++    NETWORK_VAR_CHANGE_CALLBACKS( m_vecBaseVelocity ); // 210-211
++    NETWORK_VAR_CHANGE_CALLBACKS( m_vecAbsVelocity ); // 212-213
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_flFriction ); // 214-216
++    NETWORK_VAR_CHANGE_CALLBACKS( m_vecVelocity ); // 217-218
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_iMaxHealth ); // 219-221
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_iHealth ); // 222-224
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_bClientSideRagdoll ); // 225-227
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_lifeState ); // 228-230
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_takedamage ); // 231-233
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_deathVelocity ); // 234-236
++    DISABLE_NETWORK_VAR_FOR_DERIVED( m_flMaxspeed ); // 237-239
++    NETWORK_VAR_CHANGE_CALLBACKS( m_vecViewOffset ); // 240-241
++  protected:
++    virtual void ReservedEntitySlot242() = 0; // 242
++    virtual void ReservedEntitySlot243() = 0; // 243
++    virtual void ReservedEntitySlot244() = 0; // 244
++  public:
++
+ 
+     std::byte m_Reserved0010[0x48];
+     uint32_t m_nPlayerIndex; // 0x58
+diff --git a/include/server/datamap.h b/include/server/datamap.h
+new file mode 100644
+index 000000000..d03167960
+--- /dev/null
++++ b/include/server/datamap.h
+@@ -0,0 +1,56 @@
++#pragma once
++
++#include <datamap.h>
++
++struct ServerDataMap;
++
++struct ServerTypeDescription
++{
++    fieldtype_t fieldType;
++    const char* fieldName;
++    std::int32_t fieldOffset;
++    std::uint16_t fieldSize;
++    std::int16_t flags;
++    const char* externalName;
++    ISaveRestoreOps* pSaveRestoreOps;
++    std::byte inputFunc[0x8];
++    ServerDataMap* td;
++    std::int32_t fieldSizeInBytes;
++    std::uint32_t reserved3C;
++    std::int32_t fieldAlignment;
++    ServerTypeDescription* override_field;
++    std::int32_t override_count;
++    float fieldTolerance;
++    std::int32_t flatOffset[TD_OFFSET_COUNT];
++    std::uint16_t flatGroup;
++    std::byte reserved62[0x6];
++};
++
++struct ServerDataMap
++{
++    ServerTypeDescription* dataDesc;
++    std::int32_t dataNumFields;
++    const char* dataClassName;
++    std::int32_t dataSize;
++    std::int32_t dataAlignment;
++    std::uint64_t reserved20;
++    ServerDataMap* baseMap;
++};
++
++static_assert(sizeof(ServerTypeDescription) == 0x68);
++static_assert(alignof(ServerTypeDescription) == 0x8);
++static_assert(offsetof(ServerTypeDescription, fieldName) == 0x8);
++static_assert(offsetof(ServerTypeDescription, fieldOffset) == 0x10);
++static_assert(offsetof(ServerTypeDescription, flags) == 0x16);
++static_assert(offsetof(ServerTypeDescription, externalName) == 0x18);
++static_assert(offsetof(ServerTypeDescription, inputFunc) == 0x28);
++static_assert(offsetof(ServerTypeDescription, td) == 0x30);
++static_assert(offsetof(ServerTypeDescription, fieldSizeInBytes) == 0x38);
++static_assert(offsetof(ServerTypeDescription, fieldAlignment) == 0x40);
++static_assert(offsetof(ServerTypeDescription, override_field) == 0x48);
++static_assert(offsetof(ServerTypeDescription, flatOffset) == 0x58);
++static_assert(offsetof(ServerTypeDescription, flatGroup) == 0x60);
++static_assert(sizeof(ServerDataMap) == 0x30);
++static_assert(offsetof(ServerDataMap, dataNumFields) == 0x8);
++static_assert(offsetof(ServerDataMap, dataClassName) == 0x10);
++static_assert(offsetof(ServerDataMap, baseMap) == 0x28);
+diff --git a/include/server/player.h b/include/server/player.h
+index b8fd96a0a..d1e453b6b 100644
+--- a/include/server/player.h
++++ b/include/server/player.h
+@@ -10,6 +10,84 @@ struct SV_CUserCmd;
+ class CPlayer : public CBaseCombatCharacter
+ {
+   public:
++    // Retail server.dll primary vtable: 352 slots at RVA 0x9524F8.
++    ServerClass* GetServerClass() override = 0; // 3
++    ServerDataMap* GetDataDescMap() override = 0; // 5
++    ScriptClassDesc_t* GetScriptDesc() override = 0; // 6
++    void Spawn() override = 0; // 23
++    void Precache() override = 0; // 24
++    int OnTakeDamage(const CTakeDamageInfo& info) override = 0; // 60
++    int TakeHealth(float health, int damageType) override = 0; // 62
++    void Event_Killed(const CTakeDamageInfo& info) override = 0; // 63
++    void Event_KilledOther(CBaseEntity* victim, const CTakeDamageInfo& info) override = 0; // 64
++    bool ChangeTeam(int team) override = 0; // 104
++    void Touch(CBaseEntity* other) override = 0; // 111
++    void DrawDebugGeometryOverlays() override = 0; // 34
++    void DrawDebugTextOverlays() override = 0; // 35
++    int Save(ISave& save) override = 0; // 36
++    int Restore(IRestore& restore) override = 0; // 37
++    void OnRestore() override = 0; // 40
++    bool IsPlayer() const override = 0; // 83
++    bool IsTitan() const override = 0; // 84
++    void PhysicsSimulate() override = 0; // 116
++    void UpdateOnRemove() override = 0; // 117
++    Vector3 EyePosition() override = 0; // 133
++    Vector3 EarPosition() override = 0; // 134
++    QAngle EyeAngles() override = 0; // 135
++    QAngle LocalEyeAngles() override = 0; // 136
++    Vector3 GetSmoothedVelocity() override = 0; // 141
++    void GetVelocity(Vector3* velocity, Vector3* angularVelocity) override = 0; // 142
++    float GetGravity() const override = 0; // 143
++    const Vector3& WorldSpaceCenter() const override = 0; // 152
++    void VPhysicsDestroyObject() override = 0; // 157
++    unsigned int PhysicsSolidMaskForEntity() const override = 0; // 169
++    void HandleAnimEvent(animevent_t* event) override = 0; // 258
++    const impactdamagetable_t& GetPhysicsImpactDamageTable() override = 0; // 274
++    QAngle BodyAngles() const override = 0; // 280
++    Vector3 EyeDirection2D() override = 0; // 285
++    Vector3 EyeDirection3D() override = 0; // 286
++    float ScriptGetAttackSpreadAngle() override = 0; // 288
++    void ScriptGiveExistingWeapon(CBaseEntity* weapon) override = 0; // 289
++    bool Weapon_Detach(CBaseCombatWeapon* weapon) override = 0; // 292
++    bool Weapon_Switch(CBaseCombatWeapon* weapon) override = 0; // 293
++    bool Weapon_IsPlaying3pEquipActivity() const override = 0; // 295
++    bool Weapon_IsPlaying3pReloadActivity() const override = 0; // 296
++    Vector3 Weapon_ShootPosition() override = 0; // 297
++    const char* GetWeaponClass() const override = 0; // 298
++    void Weapon_StartGestureAnim(int activity, float duration, bool autokill) override = 0; // 302
++    void Weapon_EndGestureAnim(int activity, float fadeOut) override = 0; // 303
++    void ScriptTakeWeapon(const char* weaponName) override = 0; // 304
++    void ScriptTakeWeaponNow(const char* weaponName) override = 0; // 305
++    Vector3 ScriptGetPlayerOrNPCViewVector() override = 0; // 306
++    Vector3 ScriptGetPlayerOrNPCViewForward() override = 0; // 307
++    Vector3 ScriptGetPlayerOrNPCViewUp() override = 0; // 308
++    Vector3 ScriptGetPlayerOrNPCViewRight() override = 0; // 309
++    void SetOutOfBoundsDeadTime(float time) override = 0; // 310
++    float GetOutOfBoundsDeadTime() override = 0; // 311
++    int ScriptGiveWeapon(SQVM* vm) override = 0; // 312
++    void GrappleDetach() override = 0; // 314
++    int OnTakeDamage_Alive(const CTakeDamageInfo& info) override = 0; // 315
++    void Event_Dying() override = 0; // 320
++    float GetHullWidth() const override = 0; // 324
++    float GetHullHeight() const override = 0; // 325
++    bool PlayerMelee_ExecutionStartAttacker(float duration) override = 0; // 336
++    bool PlayerMelee_ExecutionStartTarget(CBaseEntity* attacker) override = 0; // 337
++    bool PlayerMelee_ExecutionEndAttacker() override = 0; // 338
++    bool PlayerMelee_ExecutionEndTarget() override = 0; // 339
++    void Event_LeechEnd() override = 0; // 342
++  protected:
++    virtual void ReservedEntitySlot343() = 0; // 343
++    virtual void ReservedEntitySlot344() = 0; // 344
++    virtual void ReservedEntitySlot345() = 0; // 345
++    virtual void ReservedEntitySlot346() = 0; // 346
++    virtual void ReservedEntitySlot347() = 0; // 347
++    virtual void ReservedEntitySlot348() = 0; // 348
++    virtual void ReservedEntitySlot349() = 0; // 349
++    virtual void ReservedEntitySlot350() = 0; // 350
++    virtual void ReservedEntitySlot351() = 0; // 351
++  public:
++
++    // Direct native method at server.dll + 0x5D52F0, not a vtable slot.
+     void ItemPostFrame();
+ 
+     std::byte m_Reserved1498[0x100];
+diff --git a/include/server/variant_t.h b/include/server/variant_t.h
+new file mode 100644
+index 000000000..cb6aa2da8
+--- /dev/null
++++ b/include/server/variant_t.h
+@@ -0,0 +1,79 @@
++#pragma once
++
++#include <datamap.h>
++#include "engine/basehandle.h"
++#include "mathlib/color.h"
++#include "mathlib/vector.h"
++
++#ifdef variant_t
++#undef variant_t
++#endif
++
++class CBaseEntity;
++
++class variant_t
++{
++  public:
++    variant_t() : vecVal{}, fieldType(FIELD_VOID) {}
++
++    fieldtype_t FieldType() const { return fieldType; }
++    bool Bool() const { return fieldType == FIELD_BOOLEAN ? bVal : false; }
++    int Int() const { return fieldType == FIELD_INTEGER ? iVal : 0; }
++    float Float() const { return fieldType == FIELD_FLOAT ? flVal : 0.0f; }
++    const char* StringID() const { return fieldType == FIELD_STRING ? iszVal : nullptr; }
++    CBaseHandle Entity() const { return fieldType == FIELD_EHANDLE ? eVal : CBaseHandle{}; }
++    color32 Color32() const { return rgbaVal; }
++    void Vector3D(Vector3& value) const
++    {
++        value = fieldType == FIELD_VECTOR || fieldType == FIELD_POSITION_VECTOR
++            ? Vector3(vecVal[0], vecVal[1], vecVal[2]) : Vector3{};
++    }
++
++    void SetBool(bool value) { bVal = value; fieldType = FIELD_BOOLEAN; }
++    void SetInt(int value) { iVal = value; fieldType = FIELD_INTEGER; }
++    void SetFloat(float value) { flVal = value; fieldType = FIELD_FLOAT; }
++    void SetString(const char* value) { iszVal = value; fieldType = FIELD_STRING; }
++    void SetEntity(CBaseHandle value) { eVal = value; fieldType = FIELD_EHANDLE; }
++    void SetColor32(color32 value) { rgbaVal = value; fieldType = FIELD_COLOR32; }
++    void SetVector3D(const Vector3& value)
++    {
++        vecVal[0] = value.x;
++        vecVal[1] = value.y;
++        vecVal[2] = value.z;
++        fieldType = FIELD_VECTOR;
++    }
++    void SetPositionVector3D(const Vector3& value)
++    {
++        SetVector3D(value);
++        fieldType = FIELD_POSITION_VECTOR;
++    }
++
++  private:
++    union
++    {
++        bool bVal;
++        const char* iszVal;
++        int iVal;
++        float flVal;
++        float vecVal[3];
++        color32 rgbaVal;
++    };
++    CBaseHandle eVal;
++    fieldtype_t fieldType;
++};
++
++struct inputdata_t
++{
++    CBaseEntity* pActivator;
++    CBaseEntity* pCaller;
++    variant_t value;
++    int nOutputID;
++};
++
++static_assert(sizeof(variant_t) == 0x18);
++static_assert(alignof(variant_t) == 0x8);
++static_assert(offsetof(inputdata_t, pActivator) == 0x0);
++static_assert(offsetof(inputdata_t, pCaller) == 0x8);
++static_assert(offsetof(inputdata_t, value) == 0x10);
++static_assert(offsetof(inputdata_t, nOutputID) == 0x28);
++static_assert(sizeof(inputdata_t) == 0x30);
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 6578d3ced..728c2fa71 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -38,12 +38,14 @@ add_library(
+     "client/modlocalisation.cpp"
+     "client/origin.h"
+     "client/origin.cpp"
++    "client/player.cpp"
+     "client/playersettings.cpp"
+     "client/ckf.h"
+     "client/ckf.cpp"
+     "client/rejectconnectionfixes.cpp"
+     "client/room.cpp"
+     "common/proto_oob.h"
++    "common/netmessages.cpp"
+     "common/netmessages.h"
+     "common/proto_version.h"
+     "common/protocol.h"
+diff --git a/src/client/player.cpp b/src/client/player.cpp
+new file mode 100644
+index 000000000..1a0cbc62f
+--- /dev/null
++++ b/src/client/player.cpp
+@@ -0,0 +1,15 @@
++#include "client/player.h"
++#include "tier0/callbacks.h"
++
++using CPlayerIsMantlingFn = bool (*)(const C_Player*);
++static CPlayerIsMantlingFn s_CPlayerIsMantling;
++
++bool C_Player::IsMantling() const
++{
++	return s_CPlayerIsMantling(this);
++}
++
++ON_DLL_LOAD_CLIENT("client.dll", ClientPlayerMethods, [](CModule module)
++{
++	s_CPlayerIsMantling = module.Offset(0x9E0B0).RCast<CPlayerIsMantlingFn>();
++})
+diff --git a/src/common/netmessages.cpp b/src/common/netmessages.cpp
+new file mode 100644
+index 000000000..999446e8c
+--- /dev/null
++++ b/src/common/netmessages.cpp
+@@ -0,0 +1,49 @@
++#include "common/netmessages.h"
++#include "tier0/callbacks.h"
++
++using ClientTickProcessFn = bool (*)(CLC_ClientTick*);
++using ClientTickReadFn = bool (*)(CLC_ClientTick*, bf_read*);
++using ClientTickWriteFn = bool (*)(CLC_ClientTick*, bf_write*);
++using ClientTickToStringFn = const char* (*)(const CLC_ClientTick*);
++
++static ClientTickProcessFn s_ClientTickProcess;
++static ClientTickReadFn s_ClientTickRead;
++static ClientTickWriteFn s_ClientTickWrite;
++static ClientTickToStringFn s_ClientTickToString;
++
++CLC_ClientTick::CLC_ClientTick()
++	: m_nDeltaTick(0), m_nStringTableTick(0), m_flFrameTime(0), m_flFrameTimeStdDeviation(0), m_nServerCPU(0)
++{
++	m_nGroup = 0;
++	m_bReliable = false;
++	m_NetChannel = nullptr;
++	m_pMessageHandler = nullptr;
++}
++
++bool CLC_ClientTick::Process()
++{
++	return s_ClientTickProcess(this);
++}
++
++bool CLC_ClientTick::ReadFromBuffer(bf_read* buffer)
++{
++	return s_ClientTickRead(this, buffer);
++}
++
++bool CLC_ClientTick::WriteToBuffer(bf_write* buffer)
++{
++	return s_ClientTickWrite(this, buffer);
++}
++
++const char* CLC_ClientTick::ToString() const
++{
++	return s_ClientTickToString(this);
++}
++
++ON_DLL_LOAD_CLIENT("engine.dll", ClientTickMessageMethods, [](CModule module)
++{
++	s_ClientTickProcess = module.Offset(0x75CC0).RCast<ClientTickProcessFn>();
++	s_ClientTickRead = module.Offset(0x220AF0).RCast<ClientTickReadFn>();
++	s_ClientTickWrite = module.Offset(0x22AA80).RCast<ClientTickWriteFn>();
++	s_ClientTickToString = module.Offset(0x229540).RCast<ClientTickToStringFn>();
++})
+diff --git a/src/common/netmessages.h b/src/common/netmessages.h
+index cf09dfe41..272aa8213 100644
+--- a/src/common/netmessages.h
++++ b/src/common/netmessages.h
+@@ -101,7 +101,7 @@ class CNetMessage : public INetMessage
+ 	virtual bool	IsReliable(void) const { return m_bReliable; }
+ 	virtual int		GetGroup(void) const { return m_nGroup; }
+ 	virtual CNetChan* GetNetChannel(void) const { return m_NetChannel; }
+-	virtual int     MysteryReturn0() const { return 0; }
++	int GetSubChannel() const override { return 0; }
+ 
+ 	int m_nGroup;
+ 	bool m_bReliable;
+@@ -131,6 +131,32 @@ class CLC_Move : public CNetMessage
+ 	bf_write m_DataOut;
+ };
+ 
++class CLC_ClientTick : public CNetMessage
++{
++public:
++	CLC_ClientTick();
++	bool Process() override;
++	bool ReadFromBuffer(bf_read* buffer) override;
++	bool WriteToBuffer(bf_write* buffer) override;
++	int GetType() const override { return static_cast<int>(NetMessageType::clc_ClientTick); }
++	const char* GetName() const override { return "clc_ClientTick"; }
++	const char* ToString() const override;
++	size_t GetSize() const override { return sizeof(*this); }
++
++	std::int32_t m_nDeltaTick;
++	std::int32_t m_nStringTableTick;
++	float m_flFrameTime;
++	float m_flFrameTimeStdDeviation;
++	std::uint8_t m_nServerCPU;
++};
++
++static_assert(sizeof(CLC_ClientTick) == 0x38);
++static_assert(offsetof(CLC_ClientTick, m_nDeltaTick) == 0x20);
++static_assert(offsetof(CLC_ClientTick, m_nStringTableTick) == 0x24);
++static_assert(offsetof(CLC_ClientTick, m_flFrameTime) == 0x28);
++static_assert(offsetof(CLC_ClientTick, m_flFrameTimeStdDeviation) == 0x2C);
++static_assert(offsetof(CLC_ClientTick, m_nServerCPU) == 0x30);
++
+ static_assert(sizeof(CNetMessage) == 0x20);
+ static_assert(offsetof(CNetMessage, m_nGroup) == 0x08);
+ static_assert(offsetof(CNetMessage, m_bReliable) == 0x0C);
+diff --git a/src/engine/cl_main.cpp b/src/engine/cl_main.cpp
+index 8bcb440d1..36598e464 100644
+--- a/src/engine/cl_main.cpp
++++ b/src/engine/cl_main.cpp
+@@ -5,6 +5,7 @@
+ #include "engine/cdll_int.h"
+ #include "engine/client/clientstate.h"
+ #include "engine/demo.h"
++#include "engine/isplitscreen.h"
+ #include "engine/r2engine.h"
+ #include "tier0/hooks.h"
+ #include "tier1/convar.h"
+@@ -15,22 +16,6 @@
+ 
+ DECLARE_MODULE(EngineClient)
+ 
+-// need to move this
+-struct CLCClientTickMessageData
+-{
+-	void* m_pVTable;
+-	std::int32_t m_nGroup;
+-	bool m_bReliable;
+-	std::uint8_t m_Padding000D[3];
+-	CNetChan* m_pNetChannel;
+-	INetMessageHandler* m_pMessageHandler;
+-	std::int32_t m_nDeltaTick;
+-	std::int32_t m_nStringTableTick;
+-	float m_flFrameTime;
+-	float m_flFrameTimeStdDeviation;
+-	std::uint8_t m_nServerCPU;
+-	std::uint8_t m_Padding0031[7];
+-};
+ 
+ using CLSendMoveFn = void (*)();
+ 
+@@ -40,15 +25,14 @@ IBaseClientDLL** s_ppClientDLL;
+ CDemoPlayer** s_ppDemoPlayer;
+ ConVar** s_ppHostTimescale;
+ ConVar** s_ppCmdRate;
+-void** s_ppSplitScreenManager;
+-void** s_ppCommandTracker;
++ISplitScreen** s_ppSplitScreenManager;
++IDemoRecorder** s_ppDemoRecorder;
+ double* s_pNetTime;
+ float* s_pIntervalPerTick;
+ float* s_pClientFrameTime;
+ float* s_pClientFrameTimeStdDeviation;
+ float* s_pServerCPUPercent;
+-void* s_pCLCClientTickVTable;
+-float s_lastMovementCall;
++double s_lastMovementCall;
+ float s_lastFrameTime;
+ 
+ IVEngineClient* g_pEngineClient;
+@@ -56,39 +40,18 @@ char* g_pLocalPlayerUserID;
+ char* g_pLocalPlayerOriginToken;
+ GetBaseLocalClientType GetBaseLocalClient;
+ GetLocalPlayerIndexType GetLocalPlayerIndex;
+-CClientState__SendStringCmd_t CClientState__SendStringCmd;
+-CPlayer__IsMantling_t CPlayer__IsMantling;
+ 
+-bool IsLocalClientDisconnecting()
+-{
+-	void* manager = *s_ppSplitScreenManager;
+-	using IsDisconnectingFn = bool (*)(void*, int);
+-	auto isDisconnecting = reinterpret_cast<IsDisconnectingFn>((*reinterpret_cast<void***>(manager))[13]);
+-	return isDisconnecting(manager, 0);
+-}
+-
+-void NotifyCommandCreated(int commandNumber)
+-{
+-	void* tracker = *s_ppCommandTracker;
+-	auto vtable = *reinterpret_cast<void***>(tracker);
+-	using IsEnabledFn = bool (*)(void*);
+-	using NotifyFn = void (*)(void*, int);
+-
+-	if (reinterpret_cast<IsEnabledFn>(vtable[5])(tracker))
+-		reinterpret_cast<NotifyFn>(vtable[10])(tracker, commandNumber);
+-}
+ 
+ void SendClientTick(CClientState* client, CNetChan* channel)
+ {
+-	CLCClientTickMessageData tickMessage {};
+-	tickMessage.m_pVTable = s_pCLCClientTickVTable;
++	CLC_ClientTick tickMessage;
+ 	tickMessage.m_nDeltaTick = client->m_nDeltaTick;
+ 	tickMessage.m_nStringTableTick = client->m_nStringTableAckTick;
+ 	tickMessage.m_flFrameTime = *s_pClientFrameTime;
+ 	tickMessage.m_flFrameTimeStdDeviation = *s_pClientFrameTimeStdDeviation;
+ 	tickMessage.m_nServerCPU = static_cast<std::uint8_t>(*s_pServerCPUPercent * 100.0f);
+ 
+-	channel->SendNetMsg(*reinterpret_cast<INetMessage*>(&tickMessage), false, false);
++	channel->SendNetMsg(tickMessage, false, false);
+ }
+ 
+ DECLARE_HOOK(CL_Move, engine.dll + 0x734C0, [](auto&, float, bool finalTick)
+@@ -133,13 +96,13 @@ DECLARE_HOOK(CL_Move, engine.dll + 0x734C0, [](auto&, float, bool finalTick)
+ 	const bool isActive = client->m_nSignonState == eSignonState::FULL;
+ 	if (isActive)
+ 	{
+-		const float movementCallTime = static_cast<float>(g_PlatFloatTime());
+-		const float elapsedMovementCallTime = movementCallTime - s_lastMovementCall;
++		const double movementCallTime = g_PlatFloatTime();
++		const float elapsedMovementCallTime = static_cast<float>(movementCallTime - s_lastMovementCall);
+ 		const int outgoingCommandNumber = client->m_nOutgoingCommandNumber;
+ 		const bool isPaused = client->IsPaused();
+ 		const int nextCommandNumber = isPaused ? outgoingCommandNumber : outgoingCommandNumber + 1;
+ 
+-		if (!IsLocalClientDisconnecting())
++		if (!(*s_ppSplitScreenManager)->IsDisconnecting(0))
+ 		{
+ 			IBaseClientDLL* const clientDLL = *s_ppClientDLL;
+ 			float timeScale;
+@@ -169,9 +132,11 @@ DECLARE_HOOK(CL_Move, engine.dll + 0x734C0, [](auto&, float, bool finalTick)
+ 			}
+ 
+ 			s_lastFrameTime = 0.0f;
++			clientDLL->SetInputSampleTime(frameTime);
+ 			clientDLL->CreateMove(nextCommandNumber, frameTime, !isPaused);
+ 			client->m_nOutgoingCommandNumber = nextCommandNumber;
+-			NotifyCommandCreated(nextCommandNumber);
++			if ((*s_ppDemoRecorder)->IsRecording())
++				(*s_ppDemoRecorder)->RecordUserInput(nextCommandNumber);
+ 		}
+ 
+ 		if (sendPacket)
+@@ -200,10 +165,6 @@ DECLARE_HOOK(CL_Move, engine.dll + 0x734C0, [](auto&, float, bool finalTick)
+ 	}
+ })
+ 
+-ON_DLL_LOAD("client.dll", R2Client, [](CModule module)
+-{
+-	CPlayer__IsMantling = module.Offset(0x9E0B0).RCast<CPlayer__IsMantling_t>();
+-})
+ 
+ ON_DLL_LOAD_CLIENT_RELIESON("engine.dll", R2EngineClient, ConCommand, [](CModule module)
+ {
+@@ -211,7 +172,6 @@ ON_DLL_LOAD_CLIENT_RELIESON("engine.dll", R2EngineClient, ConCommand, [](CModule
+     g_pLocalPlayerUserID = module.Offset(0x13F8E688).RCast<char*>();
+ 	g_pLocalPlayerOriginToken = module.Offset(0x13979C80).RCast<char*>();
+ 	GetBaseLocalClient = module.Offset(0x78200).RCast<GetBaseLocalClientType>();
+-	CClientState__SendStringCmd = module.Offset(0x91A10).RCast<CClientState__SendStringCmd_t>();
+ 	GetLocalPlayerIndex = module.Offset(0x52260).RCast<GetLocalPlayerIndexType>();
+ 	CL_SendMove = module.Offset(0x74F10).RCast<CLSendMoveFn>();
+ 
+@@ -219,14 +179,13 @@ ON_DLL_LOAD_CLIENT_RELIESON("engine.dll", R2EngineClient, ConCommand, [](CModule
+ 	s_ppDemoPlayer = module.Offset(0xFD15608).RCast<CDemoPlayer**>();
+ 	s_ppHostTimescale = module.Offset(0x1315A2A8).RCast<ConVar**>();
+ 	s_ppCmdRate = module.Offset(0xFDA5AC8).RCast<ConVar**>();
+-	s_ppSplitScreenManager = module.Offset(0x7A6490).RCast<void**>();
+-	s_ppCommandTracker = module.Offset(0xFD14FB8).RCast<void**>();
++	s_ppSplitScreenManager = module.Offset(0x7A6490).RCast<ISplitScreen**>();
++	s_ppDemoRecorder = module.Offset(0xFD14FB8).RCast<IDemoRecorder**>();
+ 	s_pNetTime = module.Offset(0x13FA2DE0).RCast<double*>();
+ 	s_pIntervalPerTick = module.Offset(0x7CB418).RCast<float*>();
+ 	s_pClientFrameTime = module.Offset(0x13158BA4).RCast<float*>();
+ 	s_pClientFrameTimeStdDeviation = module.Offset(0x13158BAC).RCast<float*>();
+ 	s_pServerCPUPercent = module.Offset(0x130024C0).RCast<float*>();
+-	s_pCLCClientTickVTable = module.Offset(0x5D8C88).RCast<void*>();
+ 
+ 	DISPATCH_MODULE(EngineClient)
+ })
+diff --git a/src/engine/clientstate.cpp b/src/engine/clientstate.cpp
+index 01526fc62..78b4b38f4 100644
+--- a/src/engine/clientstate.cpp
++++ b/src/engine/clientstate.cpp
+@@ -3,9 +3,11 @@
+ 
+ using CClientStateIsPausedFn = bool (*)(const CClientState*);
+ using CClientStateGetFrameTimeFn = float (*)(const CClientState*);
++using CClientStateSendStringCmdFn = void (*)(CClientState*, const char*);
+ 
+ static CClientStateIsPausedFn s_CClientStateIsPaused;
+ static CClientStateGetFrameTimeFn s_CClientStateGetFrameTime;
++static CClientStateSendStringCmdFn s_CClientStateSendStringCmd;
+ 
+ bool CClientState::IsPaused() const
+ {
+@@ -17,8 +19,14 @@ float CClientState::GetFrameTime() const
+ 	return s_CClientStateGetFrameTime(this);
+ }
+ 
++void CClientState::SendStringCmd(const char* command)
++{
++	s_CClientStateSendStringCmd(this, command);
++}
++
+ ON_DLL_LOAD_CLIENT("engine.dll", ClientStateMethods, [](CModule module)
+ {
+ 	s_CClientStateIsPaused = module.Offset(0x8F520).RCast<CClientStateIsPausedFn>();
+ 	s_CClientStateGetFrameTime = module.Offset(0x8E400).RCast<CClientStateGetFrameTimeFn>();
++	s_CClientStateSendStringCmd = module.Offset(0x91A10).RCast<CClientStateSendStringCmdFn>();
+ })
+diff --git a/src/engine/demo.h b/src/engine/demo.h
+index d12b0457c..242ca4108 100644
+--- a/src/engine/demo.h
++++ b/src/engine/demo.h
+@@ -5,6 +5,35 @@
+ 
+ class CDemoFile;
+ 
++class IDemoRecorder
++{
++public:
++	virtual ~IDemoRecorder() = default;
++	virtual CDemoFile* GetDemoFile() = 0;
++	virtual int GetRecordingTick() = 0;
++	virtual void StartRecording(const char* filename) = 0;
++	virtual void SetSignonState(int state, bool wasFullUpdate) = 0;
++	virtual bool IsRecording() = 0;
++private:
++	virtual void Reserved006() = 0;
++	virtual void Reserved007() = 0;
++public:
++	virtual void StopRecording() = 0;
++	virtual void RecordCommand(const char* command) = 0;
++	virtual void RecordUserInput(int commandNumber) = 0;
++private:
++	virtual void Reserved011() = 0;
++	virtual void Reserved012() = 0;
++	virtual void Reserved013() = 0;
++	virtual void Reserved014() = 0;
++	virtual void Reserved015() = 0;
++	virtual void Reserved016() = 0;
++	virtual void Reserved017() = 0;
++	virtual void Reserved018() = 0;
++	virtual void Reserved019() = 0;
++	virtual void Reserved020() = 0;
++};
++
+ class CDemoPlayer
+ {
+ public:
