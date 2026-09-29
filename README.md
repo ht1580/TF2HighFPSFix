@@ -18,7 +18,7 @@ Experimental client-side timing compatibility patch. Native hooks for the existi
 
 ## 放置方式
 
-插件不会自动修改CFG、画面、灵敏度、宏、启动参数或fps_max。先备份现有加载器配置，只在你获准使用客户端mod的环境中测试；本项目不保证平台或服务器允许使用插件。
+插件不会自动修改CFG、画面、灵敏度、启动参数或fps_max。先备份现有加载器配置，只在你获准使用客户端mod的环境中测试；本项目不保证平台或服务器允许使用插件。
 
 如果要试用，关闭游戏后将下载包中的DLL与INI一起放到已有的 `<Titanfall2>\R2Vanilla\plugins`，通过现有 `-profile=R2Vanilla` 加载。不要用普通DLL注入工具加载。该版本会拒绝没有明确R2Vanilla参数的进程。
 
